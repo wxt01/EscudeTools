@@ -1,0 +1,26 @@
+{
+  "_说明": "零散界面图任务表。复制为 <项目>/ui_misc.json 后按需删改。type 只能是 confirm / title / menu_button。",
+  "_注意": "menu_button（标题画面按钮组）在多状态图上通常做不干净，见 docs/05-界面图汉化.md；默认先不启用。",
+  "jobs": [
+    {
+      "file": "common/confirm_parts.png",
+      "type": "confirm",
+      "text": "下次不再确认"
+    },
+    {
+      "file": "file/save_title.png",
+      "type": "title",
+      "text": "存 档"
+    },
+    {
+      "file": "file/load_title.png",
+      "type": "title",
+      "text": "读 档"
+    }
+  ],
+  "_menu_button_示例": {
+    "file": "title/menu_button.png",
+    "type": "menu_button",
+    "texts": ["开始游戏", "外传篇章", "后日谈", "读取进度", "更改设定", "附加内容", "退出游戏"]
+  }
+}

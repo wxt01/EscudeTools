@@ -1,0 +1,43 @@
+# ---- 密钥 ----
+config.json
+!config.example.json
+
+# ---- 项目运行产物（含游戏数据，切勿提交）----
+project.json
+0_backup/
+1_unpack/
+2_json_jp/
+3_json_cn/
+4_pristine/
+5_build/
+6_release/
+
+# 兜底：任何游戏资源与译文数据
+*.bin
+*.001
+*.db
+*.sqlite
+*.png
+*.ttf
+*.ttc
+!docs/**/*.png
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.spec
+
+# ---- 工具运行时产物 ----
+备份/
+替换记录.txt
+待处理清单.txt
+待办进度.json
+
+# ---- 系统/编辑器 ----
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/
+.idea/

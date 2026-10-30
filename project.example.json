@@ -1,0 +1,37 @@
+{
+  "_说明": "复制为 <项目目录>/project.json 后填写。所有脚本都通过它定位目录，不用改代码。",
+  "game_dir": "D:\\Games\\YourGame",
+  "engine_tool": "D:\\Tools\\EscudeTools\\EscudeTools.exe",
+  "bins": ["script.bin", "data.bin", "gfx.bin"],
+  "dirs": {
+    "backup": "0_backup",
+    "unpack": "1_unpack",
+    "json_jp": "2_json_jp",
+    "json_cn": "3_json_cn",
+    "pristine": "4_pristine",
+    "build": "5_build",
+    "release": "6_release"
+  },
+  "font": {
+    "face": "C:\\Windows\\Fonts\\msyh.ttc",
+    "index": 0,
+    "max_page": 83
+  },
+  "data": {
+    "name_table": "登場人物_01",
+    "name_col": "名前_44",
+    "id_col": "キャラID_14",
+    "ui_table": "TEXT_00",
+    "ui_id_col": "ID_44",
+    "ui_text_col": "Text_44"
+  },
+  "_字段说明": {
+    "game_dir": "日文原版游戏目录（含 exe 与 *.bin）",
+    "engine_tool": "解包工具的完整路径，见 vendor/README.md",
+    "bins": "需要备份与替换的资源包；一般就是这三个",
+    "font.face": "用来渲染中文的字体文件，建议黑体/雅黑一类等宽感较强的字体",
+    "font.index": "ttc 内的字体序号，ttf 填 0",
+    "font.max_page": "占位字可用的最高字库页号；填原版正文实际用到的最大页，见 docs/03",
+    "data.*": "数据库里的表名/列名。不同作品可能不同，先用 sqlite 打开看一眼"
+  }
+}

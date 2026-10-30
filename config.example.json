@@ -1,0 +1,20 @@
+{
+  "_说明": "复制为 scripts/config.json 后填写。api_key 只存在本机，config.json 已在 .gitignore 中排除，不会被提交。",
+  "api_key": "",
+  "endpoint": "https://api.deepseek.com",
+  "model": "deepseek-v4-flash",
+  "reasoning_effort": "none",
+  "batch_size": 20,
+  "context_lines": 6,
+  "concurrency": 6,
+  "glossary": "glossary.tsv",
+  "characters": "characters.tsv",
+  "max_lines": 12000,
+  "_参数说明": {
+    "reasoning_effort": "none 关闭思考模式：快 3~4 倍，输出 token 降到 1/8，译文质量无明显下降",
+    "batch_size": "每批行数；太小上下文不连贯，太大容易整批解析失败（失败会自动二分重试）",
+    "context_lines": "把前 N 行原文作为上文一起发给模型，改善指代与语气",
+    "concurrency": "并发文件数；按 API 速率限制调整",
+    "max_lines": "单次运行的行数上限，防止误触发全量翻译"
+  }
+}
