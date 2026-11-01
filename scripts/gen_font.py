@@ -109,6 +109,26 @@ def build_slot_pool(exclude=None, max_page=83):
     return pool
 
 
+def load_standin_table(path):
+    """加载替身字优选表：目标字(不在SJIS) -> SJIS 合法替身字
+
+    表中替身字与目标字语义/字形相关（多为繁体或日文写法），按表选占位字
+    让码表可追溯、替换出错时兜底字形也可读。
+    """
+    if not path or not os.path.isfile(path):
+        return {}
+    table = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.rstrip("\n")
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split("\t")
+            if len(parts) >= 2 and len(parts[0]) == 1 and len(parts[1]) == 1:
+                table.setdefault(parts[0], parts[1])
+    return table
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--text", required=True, help="json_cn 目录或文件")
@@ -118,6 +138,8 @@ def main():
     ap.add_argument("--exclude-text", default="", help="日文原文目录：其中出现过的字不作为占位格")
     ap.add_argument("--max-page", type=int, default=83, help="占位格最高页号（引擎只渲染正文用到的页）")
     ap.add_argument("--ttf", action="store_true", help="额外导出映射 TTF（系统字体路线才需要）")
+    ap.add_argument("--standin-table", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "standin.tsv"),
+                    help="替身字优选表（默认自动加载脚本同目录 standin.tsv，可传空字符串禁用）")
     args = ap.parse_args()
 
     need = collect_chars(args.text)
@@ -147,18 +169,36 @@ def main():
     pool = build_slot_pool(jp_chars | set(need), args.max_page)
     print(f"日文正文用字 {len(jp_chars)} 个已排除；可用码位 {len(pool)} 个（页号<= {args.max_page}）")
 
+    # 替身字优选表：能查到表的字直接用表内替身（语义/字形相关、经过验证），
+    # 查不到的回落到冷门码位池
+    standin = load_standin_table(args.standin_table)
+    if standin:
+        print(f"替身字优选表：{len(standin)} 条")
+    slot_by_ch = {ch: (b, ch) for b, ch in pool}
+
     # 建立映射：中文字符 → 用于占位的日文汉字
     mapping = {}
     used = set()
+    used_pref = 0
     for c in cjk:
         if ord(c) not in have:
             continue
-        for b, slot_ch in pool:
-            if slot_ch in used or slot_ch == c:
-                continue
+        slot_ch = None
+        pref = standin.get(c)
+        if pref and pref != c and pref not in used and pref in slot_by_ch:
+            slot_ch = pref
+            used_pref += 1
+        else:
+            for b, ch in pool:
+                if ch in used or ch == c:
+                    continue
+                slot_ch = ch
+                break
+        if slot_ch:
             used.add(slot_ch)
             mapping[c] = slot_ch
-            break
+    if standin:
+        print(f"按优选表映射 {used_pref} 个，冷门池兜底 {len(mapping) - used_pref} 个")
 
     if len(mapping) < len(cjk):
         print(f"! 码位不足，{len(cjk) - len(mapping)} 个字符未能映射")
