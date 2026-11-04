@@ -18,6 +18,7 @@ v2 做法：
      只对紧贴笔画的一圈上青光（模糊 alpha 做幂次压缩，不铺成板）。
      四行字形/位置完全一致，只有亮度和辉光按状态变化。
   3. 英文大字主体（rel < BAND_TOP）一个像素都不碰。
+  4. 中文按原图日文的右对齐方式定位（字形右外沿距格右线 2px），不用居中。
 
 参数全部来自 config.py；换图先跑 inspect_sprite.py 重测几何。
 运行：python build2.py
@@ -26,6 +27,7 @@ import os
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import config as C
+import layout
 
 SRC, DELIVERY, WORK, DST, SAMPLE = C.SRC, C.DELIVERY, C.WORK, C.DST, C.SAMPLE
 W, H, ROW_H, N_ROWS = C.W, C.H, C.ROW_H, C.N_ROWS
@@ -37,7 +39,17 @@ print("使用字体:", C.FONT_PATH)
 assert src.size == (W, H), f"尺寸不符: {src.size} != {(W, H)}；请改 config.W/H"
 arr = np.array(src).astype(np.float32)
 
-# ---------------------------------------------------------------- 0. 小字列范围
+# ---------------------------------------------------------------- 0. 统一布局
+# 原图日文是严格右对齐的（字形外沿距格右线恒为 2px），中文必须跟着右对齐。
+# 用居中会让字数少的「继续游戏」缩在格中间、字数相对多的「额外内容」右端越界。
+font = ImageFont.truetype(C.FONT_PATH, C.FONT_SIZE)
+starts = layout.word_starts(font)          # 每词绘制起点，四行共用
+_probe = ImageDraw.Draw(Image.new("L", (8, 8), 0))
+_bb = _probe.textbbox((0, 0), "".join(WORDS), font=font, stroke_width=1)
+PY = C.TEXT_CY - (_bb[1] + _bb[3]) / 2.0
+print("中文起点(右对齐):", [round(v, 1) for v in starts])
+
+# ---------------------------------------------------------------- 1. 小字列范围
 zone = np.zeros(W, dtype=bool)          # 有小字（含辉光余量）的 x
 for x0, x1 in COLS:
     zone[max(0, x0 - C.CLEAR_PAD_X): min(W, x1 + 15)] = True
@@ -73,7 +85,11 @@ for r in range(N_ROWS):
     for ci, (x0, x1) in enumerate(COLS):
         if r == 0 and ci in ROW0_EMPTY:
             continue
-        xa, xb = max(0, x0 - C.CLEAR_PAD_X), min(W, x1 + 15)
+        # 清除区左界跟着中文实际左沿扩展：右对齐后部分格（如「额外内容」）
+        # 中文比日文长，会往左伸出原清除区，不扩展就会压在没清干净的背景上。
+        xa = max(0, min(x0 - C.CLEAR_PAD_X,
+                        int(starts[ci]) - C.CLEAR_PAD_EXTRA))
+        xb = min(W, x1 + 15)
         fx = np.ones(xb - xa, dtype=np.float32)
         fx[:EDGE] = np.minimum(fx[:EDGE], t)
         fx[-EDGE:] = np.minimum(fx[-EDGE:], t[::-1])
@@ -109,14 +125,10 @@ base = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
 base.save(os.path.join(WORK, "clean_base.png"))
 
 # ---------------------------------------------------------------- 4. 重新绘制中文
-font = ImageFont.truetype(C.FONT_PATH, C.FONT_SIZE)
-
-# 统一基线：用全部中文字符的 bbox 并集算一次 py。
-# 按「每个词各自的 bbox」算，会因 "谈" bottom=20 / "续" bottom=18 之类差异，
-# 让不同格产生最多 0.5px 的上下浮动（看起来就像某个字偏上）。
-_probe = ImageDraw.Draw(Image.new("L", (8, 8), 0))
-_bb = _probe.textbbox((0, 0), "".join(WORDS), font=font, stroke_width=1)
-PY = C.TEXT_CY - (_bb[1] + _bb[3]) / 2.0
+# font / PY / starts 已在第 0 节统一算好：四行共用同一字形、同一基线、同一水平位置，
+# 状态切换时文字不会有任何位移。基线用全部中文字符 bbox 并集算一次，
+# 避免按「每个词各自 bbox」定位时，因 "谈" bottom=20 / "续" bottom=18
+# 之类差异造成最多 0.5px 的格间浮动（看起来像某个字偏上）。
 
 # 新图层作用范围：上下羽化，绝不碰英文大字主体。
 # 这几个数是本次实测的羽化形状，换图时按诊断出的辉光衰减高度重新给。
@@ -137,8 +149,7 @@ for r in range(N_ROWS):
             continue
         word = WORDS[ci]
         widths = [d.textlength(ch, font=font) for ch in word]
-        tw = sum(widths) + C.CHAR_GAP * (len(word) - 1)
-        x = (x0 + x1) / 2.0 - tw / 2.0
+        x = starts[ci]                    # 右对齐：末尾与日文完全相同的缩进
         for ch, cw in zip(word, widths):
             d.text((x, PY), ch, font=font, fill=C.TEXT_TINT[r] + (255,),
                    stroke_width=1, stroke_fill=C.OUTLINE[r] + (C.OUTLINE_ALPHA,))

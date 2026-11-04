@@ -13,6 +13,7 @@
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import config as C
+import layout
 
 s = Image.open(C.SRC).convert("RGBA")
 d = Image.open(C.DST).convert("RGBA")
@@ -45,6 +46,7 @@ for r in range(N_ROWS):
 
 print("== 中文齐全 / 四行对齐 ==")
 font = ImageFont.truetype(C.FONT_PATH, C.FONT_SIZE)
+starts = layout.word_starts(font)          # 与 build2.py 共用同一套右对齐坐标
 _probe = ImageDraw.Draw(Image.new("L", (8, 8), 0))
 _bb = _probe.textbbox((0, 0), "".join(WORDS), font=font, stroke_width=1)
 PY = C.TEXT_CY - (_bb[1] + _bb[3]) / 2.0
@@ -58,8 +60,7 @@ def text_layer(r):
             continue
         word = WORDS[ci]
         ws = [dr.textlength(c, font=font) for c in word]
-        tw = sum(ws) + C.CHAR_GAP * (len(word) - 1)
-        x = (x0 + x1) / 2.0 - tw / 2.0
+        x = starts[ci]                    # 右对齐
         for c, cw in zip(word, ws):
             dr.text((x, PY), c, font=font, fill=255, stroke_width=1)
             x += cw + C.CHAR_GAP
@@ -81,6 +82,27 @@ for r in range(N_ROWS):
 shared = set.intersection(*[set(b) for b in boxes])
 aligned = all(all(b[ci] == boxes[0][ci] for ci in shared) for b in boxes)
 chk("四行共有格的中文包围盒完全对齐", aligned, f"共同 {len(shared)} 格, 例: {boxes[0].get(0)}")
+
+print("== 末尾对齐（中文白字右沿 vs 日文白字右沿，常态行）==")
+
+def white_right(arr, r, xa, xb):
+    reg = arr[r * ROW_H + 36:r * ROW_H + 52, xa:xb]
+    m = ((reg[:, :, 0] > 225) & (reg[:, :, 1] > 225) &
+         (reg[:, :, 2] > 225) & (reg[:, :, 3] > 170))
+    _, xx = np.where(m)
+    return int(xx.max() + xa) if len(xx) else None
+
+
+for ci, (x0, x1) in enumerate(COLS):
+    js = white_right(S, 1, x0 - 30, x1 + 10)
+    ds = white_right(D, 1, x0 - 30, x1 + 10)
+    if js is None or ds is None:
+        chk(f"第{ci+1}格「{WORDS[ci]}」末尾可测", False, f"日文 {js} / 中文 {ds}")
+    else:
+        chk(f"第{ci+1}格「{WORDS[ci]}」末尾与日文对齐", abs(ds - js) <= 2,
+            f"日文 {js} / 中文 {ds} / 差 {ds - js:+d}px")
+        chk(f"第{ci+1}格 中文未越出格右线", ds <= x1 + 1,
+            f"中文右沿 {ds} / 格右线 {x1}")
 
 print("== 旧字残留（中文笔画之外的白色实像素）==")
 allow = np.zeros((H, W), bool)
