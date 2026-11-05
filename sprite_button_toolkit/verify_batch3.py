@@ -85,6 +85,30 @@ def coverage_check(name, s, m, min_white=190, band_y=None, xranges=None):
         "漏擦 %d / 原 %d" % (int(miss.sum()), int(ow.sum())))
 
 
+def erased_check(name, s, d, boxes, limit=0.15):
+    """逐格确认「旧字真的被擦掉」，防「对照图正常、成品却还是英文」。
+
+    `coverage_check` 只检查清除区**范围**是否盖住旧字，`every_cell_check` 只检查
+    格内有没有亮像素——英文原字两者都能满足。本判据直接比对：清除区内原图的
+    实笔画像素，若在成品里逐像素完全相同，说明这一格根本没被重写。
+    中文白字与英文白字会偶发逐像素相同（实测 2~6%），所以按比例判而非要求 0；
+    完全没汉化的格子保留率是 100%，一眼就能分开。
+    """
+    hi = s[:, :, 3] > 150
+    same = (s == d).all(axis=2) & hi
+    worst, bad = 0.0, []
+    for i, (x0, y0, x1, y1) in enumerate(boxes):
+        tot = int(hi[y0:y1, x0:x1].sum())
+        if tot < 50:
+            continue
+        r = int(same[y0:y1, x0:x1].sum()) / tot
+        worst = max(worst, r)
+        if r > limit:
+            bad.append((i, round(r, 2)))
+    chk(name + " 每格旧字确已擦除", not bad,
+        "最差保留率 %.1f%%  疑似未汉化格 %s" % (worst * 100, bad[:6]))
+
+
 def every_cell_check(name, d, cfg, mode):
     """逐格确认有中文笔画，且没有溢出格边界。"""
     ok, overflow = 0, 0
@@ -126,6 +150,7 @@ for cfg in (C.RADIO, C.CHECK):
         str(d.shape))
     coverage_check(n, s, m,
                    xranges=[(col + cfg["text_x"], col + cfg["col_w"]) for col in cfg["cols"]])
+    erased_check(n, s, d, boxes_simple(cfg))
     every_cell_check(n, d, cfg, "simple")
     # 三列文字层应完全一致（差异只在图标）
     cw = cfg["col_w"]
@@ -149,6 +174,7 @@ chk("popup_parts 尺寸/RGBA", s.shape == d.shape == (686, 864, 4), str(d.shape)
 coverage_check("popup_parts", s, m, band_y=396,
                xranges=[(p["text_x"][ci], col + p["col_w"])
                         for ci, col in enumerate(p["cols"])])
+erased_check("popup_parts", s, d, boxes_popup())
 every_cell_check("popup_parts", d, p, "popup")
 # 箭头区域逐像素保留
 arrow = np.zeros(s.shape[:2], dtype=bool)
@@ -172,6 +198,7 @@ for cfg in (C.SYS_QUIT, C.SYS_BACK):
     n = cfg["name"]
     s, d, m = outside_check(n, boxes_sys(cfg))
     chk(n + " 尺寸/RGBA", s.shape == d.shape == (114, cfg["size"][0], 4), str(d.shape))
+    erased_check(n, s, d, boxes_sys(cfg))
     every_cell_check(n, d, cfg, "sys")
     # 三行辉光色梯度：取每行「非白字」的彩色像素中位
     gs = []
