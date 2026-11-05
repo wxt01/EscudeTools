@@ -109,6 +109,51 @@ def erased_check(name, s, d, boxes, limit=0.15):
         "最差保留率 %.1f%%  疑似未汉化格 %s" % (worst * 100, bad[:6]))
 
 
+def layout_check(name, s, d, cfg):
+    """popup 排版硬约束：左沿对齐原图英文墨迹、右沿不超红线、
+    倾斜必须来自整层旋转而不是逐字抬高、禁用列不能有辉光。
+
+    ⚠️ 左沿基准是**原图英文墨迹的实测左沿 +50~53**（不是任务说明早期写的
+    +46）。+46 比原图还左 6px，中文首字会探进源矩形/遮罩左沿，用户实测
+    「第一个字部分被遮挡」。红线同样是原图英文墨迹的实际右沿，超了会在
+    游戏里被引擎裁掉、串染到相邻列。两边都要按原图量，别按文档估算值。
+    """
+    bad_l, bad_r, bad_o = [], [], []
+    for ri, (y0, y1) in enumerate(cfg["rows"]):
+        for ci, col in enumerate(cfg["cols"]):
+            q = d[y0:y1, cfg["clear_x0"][ci]:col + cfg["col_w"]]
+            ys, xs = np.nonzero(q[:, :, 3] > 60)
+            if len(xs) == 0:
+                bad_l.append((ri, ci, "empty"))
+                continue
+            left = int(xs.min()) + cfg["clear_x0"][ci] - col
+            right = int(xs.max()) + cfg["clear_x0"][ci] - col
+            expect = cfg["text_x"][ci] - col
+            if not (expect - 2 <= left <= expect + 2):
+                bad_l.append((ri, ci, left))
+            if right > cfg["redline"][ri]:
+                bad_r.append((ri, ci, right, cfg["redline"][ri]))
+            # 原图英文墨迹左沿（排除红箭头）也要逐格对上，防止文档估算值回归
+            so = s[y0:y1, col + 44:col + 170]
+            mo = (so[:, :, 3] > 60) & ~((so[:, :, 0] > 170) &
+                                        (so[:, :, 1] < 110) & (so[:, :, 2] < 110))
+            yo, xo = np.nonzero(mo)
+            if len(xo):
+                ol = int(xo.min()) + 44
+                if abs(left - ol) > 3:
+                    bad_o.append((ri, ci, left, ol))
+    chk(name + " 九行左沿对齐原图 +52", not bad_l, str(bad_l[:4]))
+    chk(name + " 中文左沿与原图英文左沿一致", not bad_o, str(bad_o[:4]))
+    chk(name + " 每行右沿不超红线", not bad_r, str(bad_r[:4]))
+    chk(name + " 倾斜=整层旋转(非逐字抬高)",
+        cfg["rise"] == 0 and cfg["rotate"] >= 4,
+        "rise=%s rotate=%s" % (cfg["rise"], cfg["rotate"]))
+    g0 = d[52:88, cfg["clear_x0"][0]:cfg["cols"][0] + cfg["col_w"], 3]
+    chk(name + " 禁用列无辉光/无高亮",
+        int((g0 >= 200).sum()) == 0 and int(g0.max()) < 120,
+        "峰值 %d" % int(g0.max()))
+
+
 def every_cell_check(name, d, cfg, mode):
     """逐格确认有中文笔画，且没有溢出格边界。"""
     ok, overflow = 0, 0
@@ -175,6 +220,7 @@ coverage_check("popup_parts", s, m, band_y=396,
                xranges=[(p["text_x"][ci], col + p["col_w"])
                         for ci, col in enumerate(p["cols"])])
 erased_check("popup_parts", s, d, boxes_popup())
+layout_check("popup_parts", s, d, p)
 every_cell_check("popup_parts", d, p, "popup")
 # 箭头区域逐像素保留
 arrow = np.zeros(s.shape[:2], dtype=bool)

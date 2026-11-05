@@ -10,7 +10,7 @@
 三种渲染模型：
   * 纯白衬线字      —— radio/check（三列复用同一字形）
   * 细斜体三层字    —— popup：暖白柔光 / 半透明暖白字身 / 1px 细色描边，
-                        逐字基线递升 + 整层斜切复现原图倾斜
+                        整层一次性旋转复现原图「整体斜过来」（不用逐字抬高）
   * 白字+青色外发光 —— sys（三行 alpha 相同，只换辉光色，中心按原图墨迹对齐）
 """
 import os
@@ -85,6 +85,85 @@ def composite(base, patch, box):
     base.alpha_composite(patch, box)
 
 
+def rotate_whole(im, angle, pad=14):
+    """【已弃用】整层 RGBA 旋转：会串色，改用 rotate_alpha 分层旋转（11.11）。
+
+    整层一次性旋转 —— 所有字作为一个整体斜过来，字内横竖笔画也跟着斜。
+
+    和「逐字抬高 / 逐行平移斜切」的区别：后者每个字本身仍是正立的，
+    只是排成阶梯，用户一眼就能看出「假斜」。旋转是在带留白的大画布上做，
+    再裁回原 patch，字角和柔光都不会被硬裁。
+    """
+    # ⚠️ PIL 的 rotate 对 RGBA 是逐通道独立插值、不做预乘：透明区 RGB=0
+    #    会混进边缘，合成到深底后每个词后面出现一块暗矩形、柔光发灰。
+    #    所以先预乘 alpha（透明区 RGB 归零）→ 旋转 → 反预乘还原颜色。
+    a = np.array(im).astype(np.float32)
+    al = a[:, :, 3:4] / 255.0
+    a[:, :, :3] *= al
+    w, h = im.size
+    big = np.zeros((h + 2 * pad, w + 2 * pad, 4), np.float32)
+    big[pad:pad + h, pad:pad + w] = a
+    r = np.array(Image.fromarray(np.clip(big, 0, 255).astype(np.uint8), "RGBA")
+                 .rotate(angle, resample=Image.BICUBIC, expand=False)).astype(np.float32)
+    out = r[pad:pad + h, pad:pad + w]
+    al2 = out[:, :, 3:4] / 255.0
+    out[:, :, :3] = np.clip(
+        np.where(al2 > 0.002, out[:, :, :3] / np.maximum(al2, 0.002), 0), 0, 255)
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), "RGBA")
+
+
+def rotate_alpha(layer, angle, pad=14):
+    """只旋转 alpha 灰度层，颜色完全不参与插值。
+
+    ⚠️ 整层 RGBA 旋转（哪怕预乘/反预乘）仍有两处硬伤：
+      1. BICUBIC 对各通道独立插值，透明区与半透明区交界会串色，暖白字身
+         被深褐描边/透明黑染成灰褐色，1:1 下像「字被一层灰板盖住」；
+      2. 反预乘在低 alpha 处放大插值噪声，笔画周围出现红/绿杂点。
+    正解是把三层（柔光/字身/描边）各自的 alpha 单独旋转，再用**纯色**
+    重建并合成 —— 颜色永远干净，几何仍是整层一次旋转，字本身照样斜。
+    """
+    w, h = layer.size
+    big = Image.new("L", (w + 2 * pad, h + 2 * pad), 0)
+    big.paste(layer, (pad, pad))
+    r = big.rotate(angle, resample=Image.BICUBIC, expand=False)
+    return r.crop((pad, pad, pad + w, pad + h))
+
+
+def compose_layers(alphas, colors, size):
+    """用纯色 + 各自 alpha 重建三层，从外到内合成。"""
+    out = Image.new("RGBA", size, (0, 0, 0, 0))
+    for a, rgb in zip(alphas, colors):
+        if a is None or rgb is None:
+            continue
+        lay = Image.new("RGBA", size, tuple(rgb) + (0,))
+        lay.putalpha(a)
+        out = Image.alpha_composite(out, lay)
+    return out
+
+
+def align_patch(im, target_x, target_cy=None):
+    """旋转后补正墨迹左沿（九行严格对齐原图 +52）和垂直重心（防整行下移被裁底）。"""
+    arr0 = np.array(im)
+    a = arr0[:, :, 3]
+    cols = np.nonzero((a > 50).any(axis=0))[0]
+    dx = int(round(target_x - cols.min())) if len(cols) else 0
+    dy = 0
+    if target_cy is not None:
+        wy = a.astype(np.float32).sum(axis=1)
+        cy = float((np.arange(len(wy)) * wy).sum() / max(wy.sum(), 1))
+        dy = int(round(target_cy - cy))
+    if dx == 0 and dy == 0:
+        return im
+    h, w = arr0.shape[:2]
+    out = np.zeros_like(arr0)
+    xd0, xd1 = max(0, dx), min(w, w + dx)
+    xs0, xs1 = max(0, -dx), min(w, w - dx)
+    yd0, yd1 = max(0, dy), min(h, h + dy)
+    ys0, ys1 = max(0, -dy), min(h, h - dy)
+    out[yd0:yd1, xd0:xd1] = arr0[ys0:ys1, xs0:xs1]
+    return Image.fromarray(out, "RGBA")
+
+
 def make_white_patch(pw, ph, word, font, cy, fill, gap, weight=1.0):
     ca = text_alpha((pw, ph), word, font, 0, cy, gap, weight)
     p = Image.new("RGBA", (pw, ph), tuple(fill) + (0,))
@@ -92,7 +171,34 @@ def make_white_patch(pw, ph, word, font, cy, fill, gap, weight=1.0):
     return p
 
 
-def make_styled_patch(pw, ph, word, font, cy, st, cfg, pad):
+def feather_edges(im, f=3, fx=0):
+    """边界羽化：柔光被 patch 边界硬裁出的直线，在 1:1 下就是矩形光板。
+
+    fx 专门处理**左右**边界 —— 整层旋转后第一个字左侧的光晕会顶到 patch
+    左界，被裁成一条垂直硬边，看起来就像首字被一块板挡住了一部分。
+    fx 必须小于墨迹左沿到 patch 左界的距离，否则会削到首字笔画。
+    """
+    a = np.array(im)
+    h, w = a.shape[:2]
+    if f > 0:
+        win = np.ones(h, np.float32)
+        r = np.linspace(0, 1, f, endpoint=False, dtype=np.float32)
+        win[:f] = r
+        win[-f:] = r[::-1]
+        a[:, :, 3] = np.clip(a[:, :, 3].astype(np.float32) * win[:, None],
+                             0, 255).astype(np.uint8)
+    if fx > 0:
+        win = np.ones(w, np.float32)
+        r = np.linspace(0, 1, fx, endpoint=False, dtype=np.float32)
+        win[:fx] = r
+        win[-fx:] = r[::-1]
+        a[:, :, 3] = np.clip(a[:, :, 3].astype(np.float32) * win[None, :],
+                             0, 255).astype(np.uint8)
+    return Image.fromarray(a, "RGBA")
+
+
+def make_styled_patch(pw, ph, word, font, cy, st, cfg, pad=0, dim=1.0,
+                      gap=None):
     """popup 用三层，从外到内：暖白柔光 -> 半透明字身 -> 1px 细色描边。
 
     层序是从原图实测 alpha 反推出来的，别凭「字应该是实心的」直觉画：
@@ -102,14 +208,31 @@ def make_styled_patch(pw, ph, word, font, cy, st, cfg, pad):
     旧版把字身画成 255 实心（核心 901 像素）、柔光几乎没有，于是又粗又硬、
     红色被挤成一条边，红白观感整个反过来。最后整层斜切做斜体感。
     """
-    A = np.array(text_alpha((pw, ph), word, font, pad, cy,
-                            cfg["char_gap"], 1.0, cfg["rise"])).astype(np.float32)
+    # 文字先在 patch 内右移 render_margin 再整体旋转；旋转完由 align_patch
+    # 把墨迹左沿补正回 pad（绝对 +52）。这样首字左下角的旋转插值与柔光尾巴
+    # 都有落脚空间，不会被 patch 左界垂直削掉。
+    A = np.array(text_alpha((pw, ph), word, font,
+                            pad + cfg.get("render_margin", 0), cy,
+                            cfg["char_gap"] if gap is None else gap,
+                            1.0, cfg["rise"])).astype(np.float32)
     core = A / 255.0
 
-    # 柔光：字形模糊后挖掉字核心，只留贴着笔画的一圈
-    blur = np.array(Image.fromarray(A.astype(np.uint8))
+    # 柔光：字形小半径模糊后挖掉字核心，只留贴笔画的一圈。
+    # 半径必须 < 行高余量：36px 行高里字高 23px，上下各只有 6.5px，
+    # 5px 光晕 + 旋转增量会被上下边界硬裁成直线，1:1 下就是一块矩形光板。
+    # 也别用「外扩环 * gain」凑面积：环会饱和成不透明片，比光板更糟。
+    near = np.array(Image.fromarray(A.astype(np.uint8))
                     .filter(ImageFilter.GaussianBlur(cfg["glow_blur"]))).astype(np.float32)
-    ga = blur * st["glow"] * cfg["glow_gain"] * st["alpha"] * (1.0 - core * 0.88)
+    # 幂次压缩：模糊后的中低值（字间空隙 / 外接矩形内部）被压暗，
+    # 只有贴着笔画的高值留下来 —— 这是「光」和「矩形光板」的分界线。
+    near = 255.0 * np.clip(near / 255.0, 0, 1) ** cfg.get("glow_gamma", 1.0)
+    # 外雾：大半径但强度低，只提供原图那种「白色发亮」的氛围；
+    # alpha 低，即使被 patch 边界裁掉也不会形成可见的矩形硬边。
+    fog = np.array(Image.fromarray(A.astype(np.uint8))
+                   .filter(ImageFilter.GaussianBlur(cfg["glow_fog_blur"]))).astype(np.float32)
+    ga = (near * cfg["glow_gain"] + fog * cfg["glow_fog_gain"]) * \
+         st["glow"] * st["alpha"] * (1.0 - core * 0.92)
+    ga = np.clip(ga, 0, cfg.get("glow_cap", 255))
 
     # 字身：半透明。禁用态由 st["alpha"] 再压一档；常态可单列提亮
     ba = A * st.get("body", cfg["body_gain"]) * st["alpha"]
@@ -121,19 +244,34 @@ def make_styled_patch(pw, ph, word, font, cy, st, cfg, pad):
     else:
         ea = np.zeros_like(A)
 
-    def layer(rgb, alpha):
-        im = Image.new("RGBA", (pw, ph), tuple(rgb) + (0,))
-        im.putalpha(Image.fromarray(np.clip(alpha, 0, 255).astype(np.uint8), "L"))
-        return im
+    def L(alpha):
+        return Image.fromarray(np.clip(alpha, 0, 255).astype(np.uint8), "L")
 
-    out = layer(cfg["glow_rgb"], ga)
-    out = Image.alpha_composite(out, layer(st["fill"], ba))
-    if st["edge"]:
-        out = Image.alpha_composite(out, layer(st["edge"], ea))
+    alphas = [L(ga), L(ba), L(ea) if st["edge"] else None]
+    colors = [cfg["glow_rgb"], st["fill"], st["edge"]]
 
-    k = cfg["shear"]
-    if k:
-        out = Image.fromarray(shear(np.array(out), k, cy), "RGBA")
+    # ★ 整层旋转，而不是逐字抬高（rise 必须为 0）+ 斜切。
+    #   只旋各层 alpha、再用纯色重建：颜色不被透明黑/深褐描边串色污染，
+    #   几何仍是「整个词一次性斜过来」，字内横竖笔画跟着斜。
+    out0 = compose_layers(alphas, colors, (pw, ph))
+    pre = np.array(out0)[:, :, 3].astype(np.float32).sum(axis=1)
+    target_cy = float((np.arange(len(pre)) * pre).sum() / max(pre.sum(), 1))
+    if cfg.get("rotate"):
+        rot = [rotate_alpha(a, cfg["rotate"], cfg.get("rotate_pad", 14))
+               if a is not None else None for a in alphas]
+        out = compose_layers(rot, colors, (pw, ph))
+    else:
+        out = out0
+
+    # 左右羽化宽度必须小于墨迹左沿到 patch 左界的距离，否则会削到首字笔画。
+    # 列0 的 pad 只有 1px（禁用态、本身无辉光），索性不做左右羽化。
+    fx = min(cfg.get("feather_x", 0), max(0, pad - 1))
+    out = feather_edges(out, cfg.get("glow_feather", 0), fx)
+    out = align_patch(out, pad, target_cy)
+    if dim != 1.0:
+        a = np.array(out).astype(np.float32)
+        a[:, :, 3] *= dim
+        out = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGBA")
     return out
 
 
@@ -193,6 +331,43 @@ def build_simple(cfg):
 
 
 # ================================================================ popup_parts
+def patch_right(p):
+    """patch 内 alpha>60 墨迹的最右列（含柔光），用于红线验收。"""
+    a = np.array(p)[:, :, 3]
+    cols = np.nonzero((a > 60).any(axis=0))[0]
+    return int(cols.max()) if len(cols) else 0
+
+
+def fit_sizes(cfg):
+    """逐行按红线下调字号，四列共用同一字号（状态切换时字不能忽大忽小）。
+
+    用列 1（常态、柔光最宽）试渲染：墨迹右沿若超过「红线 - 2px」，
+    字号降 1 再试。这样「最后一个字被引擎裁掉」由代码保证不会发生；
+    换词、换字号、换红线都不用手算。红线本身来自原图每行英文的实际右沿。
+    """
+    ci = 1
+    col = cfg["cols"][ci]
+    x0 = cfg["clear_x0"][ci]
+    pad = cfg["text_x"][ci] - x0
+    pw = col + cfg["col_w"] - x0
+    st = cfg["styles"][ci]
+    sizes = []
+    for ri, ((y0, y1), word) in enumerate(zip(cfg["rows"], cfg["words"])):
+        ph, cy = y1 - y0, (y1 - y0) / 2.0
+        sz = cfg["font_sizes"][ri]
+        limit = cfg["redline"][ri] - 2
+        for _ in range(6):
+            font = ImageFont.truetype(cfg["font"], sz)
+            p = make_styled_patch(pw, ph, word, font, cy, st, cfg, pad,
+                                  cfg["row_dim"].get(ri, 1.0),
+                                  cfg["char_gaps"][ri])
+            if x0 + patch_right(p) - col <= limit or sz <= 12:
+                break
+            sz -= 1
+        sizes.append(sz)
+    return sizes
+
+
 def build_popup():
     cfg = C.POPUP
     W, H = cfg["size"]
@@ -208,18 +383,22 @@ def build_popup():
     log("popup_parts: 清除 %d 个旧字像素（箭头不在清除区内）" % n)
 
     canvas = Image.fromarray(out, "RGBA")
-    font = ImageFont.truetype(cfg["font"], cfg["font_size"])
+    sizes = fit_sizes(cfg)
+    log("popup 逐行字号(按红线校准): %s" % sizes)
+    fonts = [ImageFont.truetype(cfg["font"], sz) for sz in sizes]
     for ci, col in enumerate(cfg["cols"]):
         st = cfg["styles"][ci]
-        for (y0, y1), word in zip(cfg["rows"], cfg["words"]):
-            # patch 左界严格等于清除区左界：柔光/斜切怎么扩散都不会漏到区外，
-            # 文字起点用 text_x-clear_x0 保证绝对位置不变。
+        for ri, ((y0, y1), word) in enumerate(zip(cfg["rows"], cfg["words"])):
+            # patch 左界严格等于清除区左界：旋转/柔光怎么扩散都不会漏到区外；
+            # 旋转后由 align_left 把墨迹左沿补正到 text_x - clear_x0。
             x0 = cfg["clear_x0"][ci]
             pad = cfg["text_x"][ci] - x0
             pw = col + cfg["col_w"] - x0
             ph = y1 - y0
             cy = (y0 + y1) / 2.0 - y0
-            p = make_styled_patch(pw, ph, word, font, cy, st, cfg, pad)
+            p = make_styled_patch(pw, ph, word, fonts[ri], cy, st, cfg, pad,
+                                  cfg["row_dim"].get(ri, 1.0),
+                                  cfg["char_gaps"][ri])
             composite(canvas, p, (x0, y0))
     res = np.array(canvas)
     save("popup_parts", res)
