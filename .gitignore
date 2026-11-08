@@ -41,3 +41,9 @@ Desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# ---- 界面图工作区归档（含游戏美术图，勿入库）----
+ui_image_toolkit/交付归档/
+ui_image_toolkit/工作输出/
+ui_image_toolkit/探索脚本/
+*.npy
