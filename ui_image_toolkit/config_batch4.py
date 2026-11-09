@@ -26,10 +26,12 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
+# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同在 ui_image_toolkit 根目录。
+# ROOT 不能用 HERE.parent——那会指到仓库根 11_工具合集/，SRC_DIR 就找不到了。
+ROOT = HERE
 SRC_DIR = ROOT / "待做原图"
 DST_DIR = ROOT / "待交付"
-WORK_DIR = HERE / "_输出"
+WORK_DIR = ROOT / "工作输出"
 WORK_DIR.mkdir(exist_ok=True)
 DST_DIR.mkdir(exist_ok=True)
 

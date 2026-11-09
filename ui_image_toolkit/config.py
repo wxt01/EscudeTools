@@ -13,10 +13,11 @@ import os
 
 # ---------------------------------------------------------------- 路径（相对本文件夹，可整体拷走）
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)                       # 「标题按钮汉化」根目录
-SRC = os.path.join(ROOT, "原图", "menu_button.png")
-DELIVERY = os.path.join(ROOT, "交付成品放这里")
-WORK = os.path.join(HERE, "_输出")
+# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级，ROOT 就是本目录。
+ROOT = HERE
+SRC = os.path.join(ROOT, "待做原图", "menu_button.png")
+DELIVERY = os.path.join(ROOT, "待交付")
+WORK = os.path.join(ROOT, "工作输出")
 DST = os.path.join(DELIVERY, "menu_button.png")
 SAMPLE = os.path.join(DELIVERY, "对比样张.png")
 os.makedirs(WORK, exist_ok=True)

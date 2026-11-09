@@ -18,9 +18,10 @@
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SRC_DIR = HERE.parent / "原图"
-DST_DIR = HERE.parent / "交付成品放这里"
-WORK_DIR = HERE / "_输出"
+# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级。
+SRC_DIR = HERE / "待做原图"
+DST_DIR = HERE / "待交付"
+WORK_DIR = HERE / "工作输出"
 
 # 每列：(清除窗口 x0, x1, 文字中心 x)
 COLS = [(20, 410, 220), (440, 830, 640), (870, 1250, 1058)]

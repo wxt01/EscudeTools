@@ -16,10 +16,11 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent
-SRC_DIR = ROOT / "原图"
-DST_DIR = ROOT / "交付成品放这里"
-WORK_DIR = HERE / "_输出"
+# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级，ROOT = HERE。
+ROOT = HERE
+SRC_DIR = ROOT / "待做原图"
+DST_DIR = ROOT / "待交付"
+WORK_DIR = ROOT / "工作输出"
 WORK_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------- 字体

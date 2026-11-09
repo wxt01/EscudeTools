@@ -42,8 +42,19 @@ Desktop.ini
 .vscode/
 .idea/
 
-# ---- 界面图工作区归档（含游戏美术图，勿入库）----
+# ---- 界面图工作区（含游戏美术图，勿入库）----
 ui_image_toolkit/交付归档/
 ui_image_toolkit/工作输出/
 ui_image_toolkit/探索脚本/
+ui_image_toolkit/回归基准/
+ui_image_toolkit/回归基准_成品.png
+# 旧布局遗留目录；现行 WORK_DIR 已统一为 工作输出/
+ui_image_toolkit/_输出/
 *.npy
+
+# 待做原图/ 与 待交付/ 只把 .gitkeep 占位入库，内容全是游戏美术图。
+# 全局 *.png 已兜底，这里连其它类型也一起挡住。
+ui_image_toolkit/待做原图/*
+ui_image_toolkit/待交付/*
+!ui_image_toolkit/待做原图/.gitkeep
+!ui_image_toolkit/待交付/.gitkeep

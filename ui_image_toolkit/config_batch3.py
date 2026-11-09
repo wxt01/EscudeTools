@@ -14,10 +14,11 @@
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-SRC_DIR = os.path.join(ROOT, "原图")
-DST_DIR = os.path.join(ROOT, "交付成品放这里")
-WORK_DIR = os.path.join(HERE, "_输出")
+# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级，ROOT = HERE。
+ROOT = HERE
+SRC_DIR = os.path.join(ROOT, "待做原图")
+DST_DIR = os.path.join(ROOT, "待交付")
+WORK_DIR = os.path.join(ROOT, "工作输出")
 os.makedirs(WORK_DIR, exist_ok=True)
 os.makedirs(DST_DIR, exist_ok=True)
 
