@@ -11,7 +11,7 @@
 
 ## ⚡ 适用范围（实测）
 
-官方解封包工具（源码在本仓库 `third_party/EscudeTools_src/`，编译即得 `EscudeTools.exe`）
+官方解封包工具 **EscudeTools**（开源，<https://github.com/lunaswd/EscudeTools>，编译即得 exe）
 对以下三款 Escu:de 作品实测通过，说明**引擎解析层是通用的**：
 
 - 廃村少女 ～妖し惑ひの籠の郷～（位图字库方案，本仓库主线）
@@ -105,8 +105,7 @@
 │   ├── 待做原图/  待交付/       工作区，仅 .gitkeep 入库
 │   └── 交付归档/ 工作输出/ 探索脚本/ 回归基准/   ❌ gitignore，含游戏美术图
 ├── vendor/
-│   └── README.md                第三方依赖政策（二进制不入境）
-└── third_party/EscudeTools_src/  Escu:de 解包器源码（编译得 EscudeTools.exe）
+│   └── README.md                第三方依赖政策 + EscudeTools 下载链接
 ```
 
 ---

@@ -9,6 +9,11 @@
 
 **这个仓库不能独立运行**，必须先拿到引擎工具。所以：
 
+**EscudeTools 解包器（下载链接）：<https://github.com/lunaswd/EscudeTools>**
+（开源，C#/.NET，`dotnet build` 编译得 exe；README 内含 -u/-r/-v/-e/-d/-f 全部用法。
+编译好后在 `config.json` 的 `engine_tool` 字段写上 exe 路径。）
+本仓库的解包、解脚本（`-v -t` 出 SQLite 消息库）、回封全部通过它完成。
+
 > **如果你是新接手的一方，发现 `project.json` 里的 `engine_tool` 不存在或为空，
 > 不要回头问用户，按下面的步骤自己装好。**
 
@@ -100,16 +105,3 @@ EscudeTools.exe -e script.db -t 0
 3. 上游工具的许可与免责，以它自己的仓库为准；本仓库的 `LICENSE` 不覆盖它。
 
 
----
-
-## 2026-11-09 政策更新：EscudeTools 源码已 vendor
-
-原政策"第三方只给获取说明"已对 **EscudeTools 解包器**放宽：其源码现存放于
-[`third_party/EscudeTools_src/`](../third_party/EscudeTools_src/)（仅 .cs/.csproj/.sln/README，
-排除 bin/obj 编译产物与 example 目录的游戏数据）。理由：本仓库的解包/回封/解脚本
-全部依赖该工具，不随仓库分发的话接手者无法开工。
-
-- 编译：`dotnet build` 得 `EscudeTools.exe`，路径写进 `config.json` 的 `engine_tool`
-- 来源：本地 `1_工具/EscudeTools源码` 快照（其 README 列明的三款测试游戏与本仓库
-  适用范围一致）；如该源码属第三方项目，同步上游时请遵守其许可
-- **二进制与游戏数据仍然不入境**的原则不变
