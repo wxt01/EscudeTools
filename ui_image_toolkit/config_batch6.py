@@ -22,8 +22,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
-SRC_DIR = ROOT / "原图"
-DST_DIR = ROOT / "交付成品放这里"
+SRC_DIR = ROOT / "待做原图"
+DST_DIR = ROOT / "待交付"
 WORK_DIR = HERE / "_输出"
 WORK_DIR.mkdir(exist_ok=True)
 DST_DIR.mkdir(exist_ok=True)
