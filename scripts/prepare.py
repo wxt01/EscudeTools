@@ -117,8 +117,11 @@ def main():
     print(f"  游戏目录 {game}")
     print(f"  引擎工具 {tool}")
 
-    for k in ("backup", "unpack", "json_jp", "json_cn", "pristine", "build", "release"):
+    for k in ("backup", "unpack", "json_jp", "json_cn", "cn_backup", "pristine", "build", "release"):
         paths.ensure(d[k])
+    for sub in ("3_译文\\词典", "7_图片\\待做原图", "7_图片\\待交付",
+                "7_图片\\工作输出", "8_测试\\test_game"):
+        paths.ensure(os.path.join(d["root"], sub))
 
     # ---------- 1. 备份 ----------
     step("备份原版资源包")

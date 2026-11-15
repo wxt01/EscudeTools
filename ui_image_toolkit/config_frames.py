@@ -22,21 +22,7 @@ HERE = Path(__file__).resolve().parent
 # 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级。
 HERE = Path(__file__).resolve().parent
 
-# ---- 工作区解析 ----
-# 工作材料（待做原图/待交付/工作输出，含游戏美术图）不属于本工具包，
-# 存放在主工程的「12_界面图工作区」；可用环境变量 UI_WORK_ROOT 覆盖。
-# 下载者单独使用本工具包时（找不到主工程），自动退回本目录内自建，保持自给自足。
-def _work_root() -> Path:
-    env = os.environ.get("UI_WORK_ROOT")
-    if env:
-        return Path(env)
-    sibling = HERE.parent.parent / "12_界面图工作区"
-    return sibling if sibling.is_dir() else HERE
-
-ROOT = _work_root()
-SRC_DIR = ROOT / "待做原图"
-DST_DIR = ROOT / "待交付"
-WORK_DIR = ROOT / "工作输出"
+from _work import ROOT, SRC_DIR, DST_DIR, WORK_DIR  # noqa: E402  （统一工作区解析，见 _work.py）
 
 # 每列：(清除窗口 x0, x1, 文字中心 x)
 COLS = [(20, 410, 220), (440, 830, 640), (870, 1250, 1058)]
@@ -62,7 +48,6 @@ GLOW_RGB = (0, 190, 190)
 GLOW = dict(expand=5, tight_blur=2.0, tight_w=0.42,
             soft_blur=5.5, soft_w=0.20, core_keep=0.02)
 
-
 def _frame(size, rows):
     """把 (清除y0,清除y1,文字中心y,[三列文案]) 展开成 clears / texts。"""
     clears, texts = [], []
@@ -74,7 +59,6 @@ def _frame(size, rows):
             clears.append((x0, x1, y0, y1))
             texts.append(dict(x=cx, cy=cy, text=w, style="white", align="center"))
     return dict(size=size, clears=clears, texts=texts)
-
 
 FRAMES = {}
 
@@ -103,7 +87,6 @@ FRAMES["frame_sound"] = _frame((1280, 566), [
 # ---------------------------------------------------------------- 操作说明页
 _man_clears, _man_texts = [], []
 
-
 def _cl(ci, y0, y1, xspan=None):
     if xspan is None:
         x0, x1, _ = COLS[ci]
@@ -111,10 +94,8 @@ def _cl(ci, y0, y1, xspan=None):
         x0, x1 = xspan
     _man_clears.append((x0, x1, y0, y1))
 
-
 def _txt(x, cy, text, style="white", align="center"):
     _man_texts.append(dict(x=x, cy=cy, text=text, style=style, align=align))
-
 
 # 组1：三个块的标题 + 键盘行 + 鼠标行
 for ci in range(3):

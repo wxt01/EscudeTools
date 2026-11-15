@@ -25,7 +25,7 @@ import paths
 
 _D = paths.dirs(cli=(sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None))
 CN_DIR = _D["json_cn"]
-BK_ROOT = os.path.join(_D["root"], "备份")
+BK_ROOT = _D.get("cn_backup") or os.path.join(_D["root"], "备份")
 LOG = os.path.join(_D["root"], "替换记录.txt")
 
 

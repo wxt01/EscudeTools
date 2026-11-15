@@ -40,15 +40,46 @@ CJK_RE = re.compile(r"[\u4e00-\u9fa5]")
 
 # ---------- 基础 ----------
 
+def _proj_root():
+    """项目根目录：由 --project / HANHUA_PROJECT / cwd 向上找 project.json 决定。"""
+    try:
+        import paths
+        return paths.dirs()["root"]
+    except Exception:
+        return ""
+
+
+def _asset_dir(here, cfg):
+    """词表所在目录：项目优先（<项目>/3_译文/词典），回退脚本目录（兼容旧布局）。
+    一个工具包服务多个游戏时，词表必须跟着项目走，否则会串词。"""
+    if cfg.get("asset_dir"):
+        d = cfg["asset_dir"]
+        root = _proj_root()
+        return os.path.join(root, d) if (root and not os.path.isabs(d)) else d
+    root = _proj_root()
+    if root:
+        cand = os.path.join(root, "3_译文", "词典")
+        if os.path.isdir(cand):
+            return cand
+    return here
+
+
 def load_cfg(here):
-    p = os.path.join(here, "config.json")
-    if not os.path.exists(p):
+    """配置解析：<项目>/config.json 优先，其次 scripts/config.json，最后 example。"""
+    cands = []
+    root = _proj_root()
+    if root:
+        cands.append(os.path.join(root, "config.json"))
+    cands.append(os.path.join(here, "config.json"))
+    p = next((x for x in cands if os.path.exists(x)), "")
+    if not p:
         alt = os.path.join(here, "config.example.json")
         if os.path.exists(alt):
             print("提示：未找到 config.json，暂用 config.example.json（需要自己填 api_key）")
             p = alt
         else:
-            sys.exit(f"缺少配置文件：{p}\n请把 config.example.json 复制为 config.json 并填写 api_key")
+            sys.exit("缺少配置文件 config.json（项目根或 scripts 目录）\n"
+                     "请把 config.example.json 复制为 config.json 并填写 api_key")
     with open(p, encoding="utf-8") as f:
         return json.load(f)
 
@@ -403,10 +434,11 @@ def translate_file(path, out_path, cfg, glossary, charmap, terms=None):
 def cmd_translate(json_dir, out_dir):
     here = os.path.dirname(os.path.abspath(__file__))
     cfg = load_cfg(here)
-    glossary = load_tsv(os.path.join(here, cfg.get("glossary", "glossary.tsv")))
-    chars = load_tsv(os.path.join(here, cfg.get("characters", "characters.tsv")))
+    asset = _asset_dir(here, cfg)
+    glossary = load_tsv(os.path.join(asset, cfg.get("glossary", "glossary.tsv")))
+    chars = load_tsv(os.path.join(asset, cfg.get("characters", "characters.tsv")))
     charmap = {c[0]: c[1] for c in chars}
-    terms = load_terms(here, cfg)
+    terms = load_terms(asset, cfg)
     os.makedirs(out_dir, exist_ok=True)
     files = sorted(f for f in os.listdir(json_dir) if f.endswith(".json"))
     limit = int(cfg.get("max_lines", 0) or 0)

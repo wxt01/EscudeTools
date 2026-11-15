@@ -4,7 +4,7 @@
 
 给**非技术使用者**用的图形界面，逐条核对译文。
 
-**用法**：把项目文件夹拖到它上面（或 `汉化待办.bat` 上）。不带参数时会用上一级目录。
+**用法**：把项目文件夹（如 `游戏\千艶万匣`）拖到它上面。不带参数时用上一级目录。
 
 界面说明：
 
@@ -18,26 +18,27 @@
 ```
 
 - `Ctrl+Enter` 保存并跳下一条
-- 首次保存会把整批译文备份到项目下的 `备份\GUI_<时间戳>\`
-- 进度存在项目下的 `待办进度.json`，关掉再开能接上
-- 只改 `3_json_cn`，**不碰游戏文件**；改完要跑 `build.py --no-gfx` 才进游戏
+- 首次保存会把整批译文备份到 `3_译文\备份\GUI_<时间戳>\`
+- 进度存在 `3_译文\备份\待办进度.json`，关掉再开能接上
+- 只改 `3_译文\`，**不碰游戏文件**；改完要跑 `build.py --no-gfx` 才进游戏
+- 备份目录与进度文件的位置来自 `project.json` 的 `cn_backup` / `json_cn`，换游戏时自动跟着走
 
 ## 从源码重建
 
 ```bat
 cd scripts
 pyinstaller -F -w --clean --name 汉化待办 todo_gui.py
-
-注意：必须在 `scripts\` 目录里执行（todo_gui 依赖同目录的 `paths.py`），
-在别处单拷 todo_gui.py 去编译，exe 运行时会报 `No module named 'paths'`。
-改完脚本后，`tools\汉化待办.exe` 和项目工作目录里的副本（如 `5_翻译工程\汉化待办.exe`）**两处都要更新**。
 copy dist\汉化待办.exe ..\tools\
 ```
 
-> 打包时 `todo_gui.py` 会连带 `paths.py` 打进单文件；它靠"从 exe 所在目录向上找 `project.json`"定位项目，
-> 所以 exe 放在任意位置都能用，只要传对项目路径。
+必须在 `scripts\` 目录里执行：`todo_gui.py` 依赖同目录的 `paths.py`，在别处单拷去编译会在运行时报
+`No module named 'paths'`。打包后 `paths.py` 已被打进单文件。
 
-## 为什么只放 exe，不放其他工具
+**旧名副本已全部废弃**：`5_翻译工程\汉化待办.exe` 已随旧目录归档到 `_归档\旧十段残留\`，
+现在只有 `工具\tools\汉化待办.exe` 这一份需要维护。这份 exe 是结构改造前打的，
+里面的备份目录逻辑仍指向旧的 `<root>\备份`——**要用前先按上面的命令重打一次**。
 
-另外两个（`replace_tool.py`、`make_checklist.py`）是纯命令行的，直接用 `bat\` 里的 bat 启动即可，
-没必要再占体积。若想也给它们做 exe，同样一条 PyInstaller 命令即可。
+## 为什么只放 exe
+
+`replace_tool.py`、`make_checklist.py` 是纯命令行的，用 `bat\` 里的 bat 启动即可，没必要再占体积。
+若想也给它们做 exe，同一条 PyInstaller 命令即可。

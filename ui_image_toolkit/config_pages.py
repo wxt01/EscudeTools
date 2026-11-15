@@ -16,24 +16,8 @@ import os
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-HERE = Path(__file__).resolve().parent
 
-# ---- 工作区解析 ----
-# 工作材料（待做原图/待交付/工作输出，含游戏美术图）不属于本工具包，
-# 存放在主工程的「12_界面图工作区」；可用环境变量 UI_WORK_ROOT 覆盖。
-# 下载者单独使用本工具包时（找不到主工程），自动退回本目录内自建，保持自给自足。
-def _work_root() -> Path:
-    env = os.environ.get("UI_WORK_ROOT")
-    if env:
-        return Path(env)
-    sibling = HERE.parent.parent / "12_界面图工作区"
-    return sibling if sibling.is_dir() else HERE
-
-ROOT = _work_root()
-SRC_DIR = ROOT / "待做原图"
-DST_DIR = ROOT / "待交付"
-WORK_DIR = ROOT / "工作输出"
-WORK_DIR.mkdir(exist_ok=True)
+from _work import ROOT, SRC_DIR, DST_DIR, WORK_DIR  # noqa: E402  （统一工作区解析，见 _work.py）
 
 # ---------------------------------------------------------------- 字体
 # 原英文都是衬线体（Times / 类似雕版），中文选宋体系比黑体更贴。
@@ -52,13 +36,11 @@ SANS_CANDIDATES = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
 ]
 
-
 def pick_font(candidates):
     for p in candidates:
         if os.path.exists(p):
             return p
     return None
-
 
 SERIF = pick_font(SERIF_CANDIDATES)
 SANS = pick_font(SANS_CANDIDATES)

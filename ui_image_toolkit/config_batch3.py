@@ -14,22 +14,7 @@
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# 工作区解析：默认主工程「12_界面图工作区」（可用环境变量 UI_WORK_ROOT 覆盖）；
-# 下载者单独使用时退回本目录自建，保持自给自足。详见 config_batch4.py 注释。
-def _work_root():
-    env = os.environ.get("UI_WORK_ROOT")
-    if env:
-        return env
-    sibling = os.path.join(os.path.dirname(os.path.dirname(HERE)), "12_界面图工作区")
-    return sibling if os.path.isdir(sibling) else HERE
-
-ROOT = _work_root()
-SRC_DIR = os.path.join(ROOT, "待做原图")
-DST_DIR = os.path.join(ROOT, "待交付")
-WORK_DIR = os.path.join(ROOT, "工作输出")
-os.makedirs(WORK_DIR, exist_ok=True)
-os.makedirs(DST_DIR, exist_ok=True)
-
+from _work import ROOT, SRC_DIR, DST_DIR, WORK_DIR  # noqa: E402  （统一工作区解析，见 _work.py）
 
 def find_font(kind):
     """kind='serif' 衬线（配原图拉丁衬线体/日文明朝体）
@@ -53,7 +38,6 @@ def find_font(kind):
         if os.path.exists(p):
             return p
     raise RuntimeError("找不到 %s 中文字体，请在 config_batch3.find_font 里补本机路径" % kind)
-
 
 SERIF = find_font("serif")
 SANS = find_font("sans")

@@ -77,7 +77,9 @@ def main():
 
     files = sorted(glob.glob(os.path.join(CN_DIR, "*.jsonl")))
     if not args.dry:
-        bak = os.path.join(BASE, "备份", time.strftime("%Y%m%d_%H%M%S"))
+        d = paths.dirs(cli=args.project)
+        bk_root = d.get("cn_backup") or os.path.join(d["root"], "备份")
+        bak = os.path.join(bk_root, time.strftime("%Y%m%d_%H%M%S"))
         os.makedirs(bak, exist_ok=True)
         for p in files:
             shutil.copy2(p, bak)

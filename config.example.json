@@ -1,5 +1,5 @@
 {
-  "_说明": "复制为 scripts/config.json 后填写。api_key 只存在本机，config.json 已在 .gitignore 中排除，不会被提交。",
+  "_说明": "复制为 <游戏文件夹>/config.json 后填写。api_key 只存在本机，config.json 已在 .gitignore 中排除，不会被提交。脚本优先读游戏文件夹里的这份，其次才读 scripts/config.json。",
   "api_key": "",
   "endpoint": "https://api.deepseek.com",
   "model": "deepseek-v4-flash",
@@ -7,10 +7,12 @@
   "batch_size": 20,
   "context_lines": 6,
   "concurrency": 6,
+  "asset_dir": "3_译文\\词典",
   "glossary": "glossary.tsv",
   "characters": "characters.tsv",
   "max_lines": 12000,
   "_参数说明": {
+    "asset_dir": "术语表所在目录，相对游戏文件夹。一个工具包服务多个游戏时靠它隔离词表，避免串词",
     "reasoning_effort": "none 关闭思考模式：快 3~4 倍，输出 token 降到 1/8，译文质量无明显下降",
     "batch_size": "每批行数；太小上下文不连贯，太大容易整批解析失败（失败会自动二分重试）",
     "context_lines": "把前 N 行原文作为上文一起发给模型，改善指代与语气",

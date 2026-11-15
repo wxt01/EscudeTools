@@ -337,6 +337,37 @@ def deploy(d, outs):
     print(f"  已部署到 {rel}")
 
 
+def _warn_if_pages_pristine(d):
+    """--no-gfx 仍会整包重打 gfx.bin。若解包树里的字库页还是原版（没画中文），
+    重打出来就是原版字库，中文会整片消失。这里提前拦住，避免误毁补丁。"""
+    src = pristine_font_dir(d)
+    dst = os.path.join(d["unpack"], "output", "gfx", "font", os.path.basename(src))
+    if not os.path.isdir(dst):
+        sys.exit(f"解包树里没有字库页：{dst}\n先跑一次全量构建")
+    same = diff = 0
+    for size in sorted(os.listdir(src)):
+        sp = os.path.join(src, size)
+        if not os.path.isdir(sp):
+            continue
+        for fn in sorted(f for f in os.listdir(sp) if f.endswith(".png"))[:2]:
+            dp = os.path.join(dst, size, fn)
+            if not os.path.isfile(dp):
+                diff += 1
+                continue
+            with open(os.path.join(sp, fn), "rb") as f1, open(dp, "rb") as f2:
+                if f1.read() == f2.read():
+                    same += 1
+                else:
+                    diff += 1
+        if same and diff:
+            break
+    if same and not diff:
+        sys.exit("解包树里的字库页与底版完全相同（还没画中文）。\n"
+                 "--no-gfx 会整包重打 gfx.bin，中文会消失。\n"
+                 "先跑一次全量构建，之后改译文再用 --no-gfx。")
+    print(f"  字库页检查：{diff} 页已汉化 / {same} 页未变，可以安全重打")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default="", help="项目目录（含 project.json）")
@@ -345,6 +376,7 @@ def main():
     args = ap.parse_args()
 
     d = paths.dirs(cli=args.project)
+    os.environ["HANHUA_PROJECT"] = d["root"]   # 子进程（hx.py 等）据此定位项目
     print(f"项目：{d['root']}")
     if not os.path.isfile(os.path.join(d["root"], "project.json")):
         sys.exit("该目录里没有 project.json，先跑 prepare.py")
@@ -354,6 +386,7 @@ def main():
 
     if args.no_gfx:
         paths.need_file(cmap_path, "没有现成码表，先跑一次全量构建")
+        _warn_if_pages_pristine(d)
         cmap = json.load(open(cmap_path, encoding="utf-8"))
     else:
         step("收集中文用字")

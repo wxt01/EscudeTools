@@ -1,16 +1,18 @@
 {
-  "_说明": "复制为 <项目目录>/project.json 后填写。所有脚本都通过它定位目录，不用改代码。",
+  "_说明": "复制为 <游戏文件夹>/project.json 后填写。路径全部相对游戏文件夹，整个游戏文件夹可以整体搬走。",
+  "source": "project",
   "game_dir": "D:\\Games\\YourGame",
-  "engine_tool": "D:\\Tools\\EscudeTools\\EscudeTools.exe",
+  "engine_tool": "..\\工具\\engine\\EscudeTools.exe",
   "bins": ["script.bin", "data.bin", "gfx.bin"],
   "dirs": {
-    "backup": "0_backup",
-    "unpack": "1_unpack",
-    "json_jp": "2_json_jp",
-    "json_cn": "3_json_cn",
-    "pristine": "4_pristine",
-    "build": "5_build",
-    "release": "6_release"
+    "backup": "0_原版",
+    "unpack": "1_解包",
+    "json_jp": "2_日文文本",
+    "json_cn": "3_译文",
+    "cn_backup": "3_译文\\备份",
+    "pristine": "4_底版",
+    "build": "5_构建",
+    "release": "6_补丁"
   },
   "font": {
     "face": "C:\\Windows\\Fonts\\msyh.ttc",
@@ -26,10 +28,12 @@
     "ui_text_col": "Text_44"
   },
   "_字段说明": {
+    "_骨架": "0_原版 / 1_解包 / 2_日文文本 / 3_译文（词典·备份）/ 4_底版 / 5_构建 / 6_补丁 / 7_图片 / 8_测试",
     "game_dir": "日文原版游戏目录（含 exe 与 *.bin）",
-    "engine_tool": "解包工具的完整路径，见 vendor/README.md",
+    "engine_tool": "解包器路径。写相对路径时按游戏文件夹解析，推荐 ..\\工具\\engine\\EscudeTools.exe；见 vendor/README.md",
     "bins": "需要备份与替换的资源包；一般就是这三个",
-    "font.face": "用来渲染中文的字体文件，建议黑体/雅黑一类等宽感较强的字体",
+    "dirs.cn_backup": "译文快照目录（GUI/替换/清理脚本自动写这里），与原版备份分开",
+    "font.face": "渲染中文用的字体，建议黑体/雅黑一类",
     "font.index": "ttc 内的字体序号，ttf 填 0",
     "font.max_page": "占位字可用的最高字库页号；填原版正文实际用到的最大页，见 docs/03",
     "data.*": "数据库里的表名/列名。不同作品可能不同，先用 sqlite 打开看一眼"

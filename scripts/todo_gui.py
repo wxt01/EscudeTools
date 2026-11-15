@@ -24,8 +24,8 @@ import paths
 _arg = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None
 _D = paths.dirs(cli=_arg)
 CN_DIR = _D["json_cn"]
-BK_ROOT = os.path.join(_D["root"], "备份")
-STATE = os.path.join(_D["root"], "待办进度.json")
+BK_ROOT = _D.get("cn_backup") or os.path.join(_D["root"], "备份")
+STATE = os.path.join(BK_ROOT, "待办进度.json")
 
 KANA = re.compile(r"[\u3040-\u309f\u30a0-\u30ff]")
 TAG = re.compile(r"<[^>]{1,16}>")
