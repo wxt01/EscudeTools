@@ -14,8 +14,16 @@
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-# 2026-11-09 新布局：脚本与 待做原图/待交付/工作输出 同级，ROOT = HERE。
-ROOT = HERE
+# 工作区解析：默认主工程「12_界面图工作区」（可用环境变量 UI_WORK_ROOT 覆盖）；
+# 下载者单独使用时退回本目录自建，保持自给自足。详见 config_batch4.py 注释。
+def _work_root():
+    env = os.environ.get("UI_WORK_ROOT")
+    if env:
+        return env
+    sibling = os.path.join(os.path.dirname(os.path.dirname(HERE)), "12_界面图工作区")
+    return sibling if os.path.isdir(sibling) else HERE
+
+ROOT = _work_root()
 SRC_DIR = os.path.join(ROOT, "待做原图")
 DST_DIR = os.path.join(ROOT, "待交付")
 WORK_DIR = os.path.join(ROOT, "工作输出")
