@@ -14,7 +14,7 @@ hx.py —— Escu:de 汉化流水线（提取 / 翻译 / 注入 / 质检）
 
 配置：同目录 config.json
   {
-    "api_key": "sk-...",
+    "api_key": "",
     "endpoint": "https://api.deepseek.com",
     "model": "deepseek-v4-flash",
     "batch_size": 12,

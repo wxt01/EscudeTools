@@ -1,4 +1,4 @@
-# publish.ps1 —— 打发布包
+﻿# publish.ps1 —— 打发布包
 #
 # 只带工具与文档：不含游戏数据、不含 API key、不含第三方二进制（engine\）。
 # 用法：powershell -ExecutionPolicy Bypass -File 工具\publish.ps1
@@ -18,7 +18,7 @@ if (Test-Path -LiteralPath $Stage) { Remove-Item -LiteralPath $Stage -Recurse -F
 New-Item -ItemType Directory -Path $Stage | Out-Null
 
 # ---------- 1. 白名单复制 ----------
-$WhitelistDirs  = @("scripts", "bat", "docs", "ui_image_toolkit", "vendor", "tools", "glossary")
+$WhitelistDirs  = @("scripts", "bat", "docs", "ui_image_toolkit", "vendor", "tools", "游戏")
 $WhitelistFiles = @("README.md", "LICENSE", "project.example.json", "config.example.json",
                     ".gitignore", "ui_labels.example.json", "ui_misc.example.json")
 
@@ -87,7 +87,7 @@ if ($Problems -gt 0) {
 }
 
 # ---------- 4. 压缩与校验 ----------
-$Zip = Join-Path $OutDir ("工具合集_" + $Stamp + ".zip")
+$Zip = Join-Path $OutDir ("EscudeTools_" + $Stamp + ".zip")
 Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $Zip -CompressionLevel Optimal -Force
 Remove-Item -LiteralPath $Stage -Recurse -Force
 
@@ -99,3 +99,4 @@ Write-Output ""
 Write-Output ("发布包: " + $Zip)
 Write-Output ("大小:   " + $Size + " MB")
 Write-Output ("sha256: " + $Hash)
+
