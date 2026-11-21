@@ -104,19 +104,43 @@ def make_cmap(d, need):
     return p
 
 
+def _font_root(d):
+    return os.path.join(d["pristine"], "gfx", "font")
+
+
+def _has_size_dirs(path):
+    """该目录下是否直接就是 12/ 14/ … 字号目录（无语言层布局）"""
+    try:
+        return any(s.isdigit() and os.path.isdir(os.path.join(path, s)) for s in os.listdir(path))
+    except OSError:
+        return False
+
+
 def pristine_font_dir(d):
-    base = os.path.join(d["pristine"], "gfx", "font")
+    """返回「含字号目录」的那一层。兼容两种封包布局：
+       gfx\\font\\ja_jp\\12\\…（带语言层，千艶万匣）
+       gfx\\font\\12\\…      （无语言层，戦巫センナギ）"""
+    base = _font_root(d)
     if not os.path.isdir(base):
         sys.exit(f"缺少干净字库底版：{base}\n先跑 prepare.py")
-    # 优先 ja_jp（日文原字库），否则取第一个子目录
+    # 优先 ja_jp（日文原字库），否则取第一个语言子目录
     for name in ("ja_jp", "jp", "ja"):
         p = os.path.join(base, name)
         if os.path.isdir(p):
             return p
+    if _has_size_dirs(base):
+        return base
     subs = [s for s in os.listdir(base) if os.path.isdir(os.path.join(base, s))]
     if not subs:
         sys.exit(f"{base} 下没有字号目录")
     return os.path.join(base, subs[0])
+
+
+def unpack_font_dir(d, src):
+    """底版字库目录 → 解包树里对应的目录（保持同样的层级，别再套一层）"""
+    dst_root = os.path.join(d["unpack"], "output", "gfx", "font")
+    rel = os.path.relpath(src, _font_root(d))
+    return dst_root if rel in (".", "") else os.path.join(dst_root, rel)
 
 
 def paint_pages(d, cmap_path):
@@ -132,7 +156,7 @@ def paint_pages(d, cmap_path):
     if not os.path.isdir(out):
         raise RuntimeError("字库页没有生成：\n" + log[-1500:])
 
-    dst = os.path.join(d["unpack"], "output", "gfx", "font", os.path.basename(src))
+    dst = unpack_font_dir(d, src)
     shutil.rmtree(dst, ignore_errors=True)
     shutil.copytree(out, dst)
     print(f"  字库页已替换 → {dst}")
@@ -175,28 +199,39 @@ def apply_ui(d, clean_sys):
 
 
 def build_script(d, cmap_path):
+    """只重写 .001（台词表），让 .bin（指令流 + __text 关键字表）保持原版字节。
+
+    为什么不用 type 0（工具注释里自己写着 unstable）：
+      实测 -e -t 0 连 .bin 一起重写，产物能被 -v 载入、但 export 全失败（247/247），
+      等于把指令流写坏；而 -e -t 1 生成的 .001 在未改文本时与原版**逐字节一致**，
+      原版 .bin + 新 .001 再用 -v -t 0 导出 494/494 全过 —— 这条路可验证、可回滚。
+    """
     out = os.path.join(d["unpack"], "output")
-    db = os.path.join(out, "script.db")
-    src = os.path.join(d["pristine"], "script.db")
-    paths.need_file(src, "先跑 prepare.py")
-    shutil.copy2(src, db)
+    script_dir = os.path.join(out, "script")
+    paths.need_file(script_dir, "先跑 prepare.py 解包")
+    tool = paths.engine_tool(d)
+
+    sm = os.path.join(out, "script_sm.db")
+    if os.path.isfile(sm):
+        os.remove(sm)
+    run([tool, "-v", script_dir, "-t", "1"], cwd=out)
+    paths.need_file(sm, "type 1 导出没有生成 script_sm.db（确认 .001 文件在 output\\script 里）")
 
     log = run([sys.executable, os.path.join(HERE, "hx.py"), "inject",
-               db, d["json_cn"], cmap_path], cwd=HERE)
+               sm, d["json_cn"], cmap_path], cwd=HERE)
     for l in [l for l in log.strip().splitlines() if l.strip()][-2:]:
         print("  " + l)
 
-    tool = paths.engine_tool(d)
-    run([tool, "-e", db, "-t", "0"], cwd=out)
+    run([tool, "-e", sm, "-t", "1"], cwd=out)
     repack = os.path.join(out, "repack")
     if not os.path.isdir(repack) or not os.listdir(repack):
-        raise RuntimeError("脚本回封没有产物，检查 -e 的输入是否为 script.db 文件")
+        raise RuntimeError("脚本回封没有产物，检查 -e 的输入是否为 script_sm.db 文件")
     n = 0
     for fn in os.listdir(repack):
-        shutil.move(os.path.join(repack, fn), os.path.join(out, "script", fn))
+        shutil.move(os.path.join(repack, fn), os.path.join(script_dir, fn))
         n += 1
     shutil.rmtree(repack, ignore_errors=True)
-    print(f"  脚本回封 {n} 个文件")
+    print(f"  台词表回封 {n} 个 .001（.bin 未改动）")
 
 
 def build_data(d, cmap):
@@ -332,8 +367,15 @@ def deploy(d, outs):
         "【观感】",
         "  字库由系统字体渲染，与其他汉化补丁的字库相比字重/字距有差异。",
     ]
-    with open(os.path.join(rel, "使用说明.txt"), "w", encoding="utf-8") as f:
+    # 自动生成的说明写到 使用说明_auto.txt；使用说明.txt 只在不存在时生成。
+    # 这样项目里手写的说明（版本变更、残留项、已知问题）不会被每次构建冲掉。
+    auto = os.path.join(rel, "使用说明_auto.txt")
+    with open(auto, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+    hand = os.path.join(rel, "使用说明.txt")
+    if not os.path.isfile(hand):
+        shutil.copy2(auto, hand)
+        print("  已生成 使用说明.txt（之后可手改，构建不再覆盖）")
     print(f"  已部署到 {rel}")
 
 
@@ -341,15 +383,20 @@ def _warn_if_pages_pristine(d):
     """--no-gfx 仍会整包重打 gfx.bin。若解包树里的字库页还是原版（没画中文），
     重打出来就是原版字库，中文会整片消失。这里提前拦住，避免误毁补丁。"""
     src = pristine_font_dir(d)
-    dst = os.path.join(d["unpack"], "output", "gfx", "font", os.path.basename(src))
+    dst = unpack_font_dir(d, src)
     if not os.path.isdir(dst):
         sys.exit(f"解包树里没有字库页：{dst}\n先跑一次全量构建")
+    # 只抽查「码表真正落到的页」——00/01 页是 ASCII 与假名，画中文不会动它们，
+    # 老逻辑只比前两页，会把「已汉化」误判成「没画过」（戦巫センナギ 实测踩到）。
+    pages = _cmap_pages(os.path.join(d["build"], "cmap", "cmap.json"))
+    sample = pages[:2] + pages[len(pages) // 2:len(pages) // 2 + 2] + pages[-2:] if pages else [0, 1]
     same = diff = 0
     for size in sorted(os.listdir(src)):
         sp = os.path.join(src, size)
         if not os.path.isdir(sp):
             continue
-        for fn in sorted(f for f in os.listdir(sp) if f.endswith(".png"))[:2]:
+        for page in sorted(set(sample)):
+            fn = f"{page:02d}.png"
             dp = os.path.join(dst, size, fn)
             if not os.path.isfile(dp):
                 diff += 1
@@ -365,7 +412,34 @@ def _warn_if_pages_pristine(d):
         sys.exit("解包树里的字库页与底版完全相同（还没画中文）。\n"
                  "--no-gfx 会整包重打 gfx.bin，中文会消失。\n"
                  "先跑一次全量构建，之后改译文再用 --no-gfx。")
-    print(f"  字库页检查：{diff} 页已汉化 / {same} 页未变，可以安全重打")
+    print(f"  字库页检查（抽查第 {','.join(str(x) for x in sorted(set(sample)))} 页）："
+          f"{diff} 处已汉化 / {same} 处未变，可以安全重打")
+
+
+def _cmap_pages(cmap_path):
+    """码表里的占位字落在哪些字库页（复刻引擎 put_char 的页号算法）"""
+    try:
+        with open(cmap_path, encoding="utf-8") as f:
+            cmap = json.load(f)
+    except Exception:
+        return []
+    pages = set()
+    for ph in cmap.values():
+        try:
+            b = str(ph).encode("cp932")
+        except Exception:
+            continue
+        if len(b) != 2:
+            continue
+        lead, trail = b[0], b[1]
+        c0 = lead - (0x40 if lead >= 0xE0 else 0)
+        c1 = trail - (1 if trail >= 0x80 else 0)
+        page = (c0 - 0x80) * 2
+        if c1 < 0x9E:
+            page -= 1
+        if 1 <= page <= 94:
+            pages.add(page)
+    return sorted(pages)
 
 
 def main():
