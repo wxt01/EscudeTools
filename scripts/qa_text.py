@@ -71,7 +71,7 @@ TRAD_CHARS = set(
     "門儀劔劍戰齡歲廣應惡據舉拝抜択拡絵図団囲気鉄銀銃龍竜稲髪圧変弁隣獣沢様達戦屆屬歸"
     "優傳僅價億儀儘償兒黨內兩冊寫準劃剛創劇勸辦務動勵勞勢勳匯區協單賣廬廳歷厲壓參雙發變"
 )
-PAIRS = (("“", "”"), ("（", "）"), ("【", "】"), ("〈", "〉"))
+PAIRS = (("「", "」"), ("『", "』"), ("“", "”"), ("（", "）"), ("【", "】"))
 
 
 def engine_page_cell(placeholder):
@@ -161,7 +161,9 @@ def check_lines(rows):
         if "\n" in zh:
             blocks.append(("含裸换行符", fn, idx, repr(zh[:20])))
         if jb.strip() == zb.strip() and len(CJK_RE.findall(zb)) > 3:
-            blocks.append(("与原文相同(未译)", fn, idx, jp[:44]))
+            # 整行就是个专名（去 ruby 后没假名、汉字也不多）时，中日写法相同属正常
+            if KANA_RE.search(jb) or len(CJK_RE.findall(zb)) >= 12:
+                blocks.append(("与原文相同(未译)", fn, idx, jp[:44]))
 
         bad = sorted({c for c in zb if c in TRAD_CHARS})
         if bad:
