@@ -417,7 +417,7 @@ def _warn_if_pages_pristine(d):
 
 
 def _cmap_pages(cmap_path):
-    """码表里的占位字落在哪些字库页（复刻引擎 put_char 的页号算法）"""
+    """码表里的占位字落在哪些字库页（复刻引擎 put_char 的 JIS 区/点算法）"""
     try:
         with open(cmap_path, encoding="utf-8") as f:
             cmap = json.load(f)
@@ -432,14 +432,34 @@ def _cmap_pages(cmap_path):
         if len(b) != 2:
             continue
         lead, trail = b[0], b[1]
-        c0 = lead - (0x40 if lead >= 0xE0 else 0)
-        c1 = trail - (1 if trail >= 0x80 else 0)
-        page = (c0 - 0x80) * 2
-        if c1 < 0x9E:
-            page -= 1
-        if 1 <= page <= 94:
+        if lead <= 0x9F:
+            ku = (lead - 0x81) * 2 + 0x21
+        else:
+            ku = (lead - 0xC1) * 2 + 0x21
+        if trail >= 0x9F:
+            ku += 1
+        page = ku - 0x21
+        if 0 <= page <= 93:
             pages.add(page)
     return sorted(pages)
+
+
+def run_qa(d, strict=False):
+    """打包前文本质检（qa_text.py）。拦截项不为 0 就中止构建。"""
+    qa = os.path.join(HERE, "qa_text.py")
+    if not os.path.isfile(qa):
+        print("  ! 没有 qa_text.py，跳过质检")
+        return
+    p = subprocess.run([sys.executable, qa, "--project", d["root"]]
+                       + (["--strict"] if strict else []),
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    for line in [x for x in (p.stdout or "").strip().splitlines() if x.strip()][-5:]:
+        print("  " + line)
+    if p.returncode == 2:
+        sys.exit("文本质检不通过（明细见 <项目>\\审校报告.txt）。\n"
+                 "  修完再构建；确认要强制出包可加 --skip-qa。")
+    if p.returncode not in (0, 3):
+        print(f"  ! 质检脚本异常退出（{p.returncode}）：{(p.stderr or '')[-300:]}")
 
 
 def main():
@@ -447,6 +467,8 @@ def main():
     ap.add_argument("--project", default="", help="项目目录（含 project.json）")
     ap.add_argument("--no-gfx", action="store_true", help="跳过字库与界面图，只重打脚本")
     ap.add_argument("--skip-ui", action="store_true", help="跳过界面图替换")
+    ap.add_argument("--skip-qa", action="store_true", help="跳过打包前的文本质检（不推荐）")
+    ap.add_argument("--strict-qa", action="store_true", help="质检警告也视为失败")
     args = ap.parse_args()
 
     d = paths.dirs(cli=args.project)
@@ -483,6 +505,10 @@ def main():
         if not args.skip_ui:
             step("替换界面图")
             apply_ui(d, os.path.join(d["pristine"], "gfx", "sys"))
+
+    if not args.skip_qa:
+        step("文本质检（qa_text.py）")
+        run_qa(d, strict=args.strict_qa)
 
     step("注入译文并回封脚本")
     build_script(d, cmap_path)
