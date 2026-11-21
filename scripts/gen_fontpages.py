@@ -34,29 +34,47 @@ SS = 4  # 超采样倍数：先按 4 倍字号绘制再缩回，避免小字号�
        # （24px 直绘时青类密横部件糊死显重、亘类小部件发虚缺笔画）
 
 
-def engine_pos(lead, trail):
-    """SJIS 双字节 -> (页号, 格号)，完全复刻 put_char()"""
-    c0 = lead - (0x40 if lead >= 0xE0 else 0)
-    c1 = trail - (1 if trail >= 0x80 else 0)
-    page = (c0 - 0x80) * 2
-    if c1 < 0x9E:
-        page -= 1
-        cell = c1 - 0x3F
+def sjis_to_jis(lead, trail):
+    """SJIS 双字节 → JIS 区/点（0x21 起）"""
+    if lead <= 0x9F:
+        ku = (lead - 0x81) * 2 + 0x21
     else:
-        cell = c1 - 0x9D
-    return page, cell
+        ku = (lead - 0xC1) * 2 + 0x21
+    if trail >= 0x9F:
+        ten = trail - 0x7E
+        ku += 1
+    else:
+        ten = trail - (0x1F if trail < 0x7F else 0x20)
+    return ku, ten
+
+
+def engine_pos(lead, trail):
+    """SJIS 双字节 -> (页号, 格号)，复刻 misc/text.c: put_char()
+
+        汉字/全角：sjis_to_jis → c0=区-0x21, c1=点-0x21
+                   页号 = c0，格号 = c1
+        ASCII   ：页号 = 94，格号 = 字符 - 0x21
+        半角片假：页号 = 95，格号 = 字符 - 0xA1
+
+    注意：不同 build 的引擎口径不同（有的按 SJIS 首尾字节直接推页号，整体差一格）。
+    换作品先看 sennagi.bin 之类自带源码里的 misc/text.c，或做「涂色测试」验证。
+    """
+    ku, ten = sjis_to_jis(lead, trail)
+    return ku - 0x21, ten - 0x21
 
 
 def pos_of(placeholder):
     b = placeholder.encode("cp932")
     if len(b) == 1:
         if 0x21 <= b[0] <= 0x7E:
-            return 0, b[0] - 0x20
+            return 94, b[0] - 0x21
+        if 0xA1 <= b[0] <= 0xDF:
+            return 95, b[0] - 0xA1
         return None
     if len(b) != 2:
         return None
     page, cell = engine_pos(b[0], b[1])
-    if page < 1 or page > 94 or cell < 0 or cell > 95:
+    if page < 0 or page > 93 or cell < 0 or cell > 95:
         return None
     return page, cell
 

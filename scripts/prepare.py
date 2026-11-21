@@ -40,14 +40,15 @@ def step(msg):
 
 
 def sjis_page(b):
-    """两个字节 → 字库页号（引擎 put_char() 的算法）"""
+    """两个字节 → 字库页号（= JIS 区 - 0x21，见 misc/text.c put_char）"""
     lead, trail = b[0], b[1]
-    c0 = lead - (0x40 if lead >= 0xE0 else 0)
-    c1 = trail - (1 if trail >= 0x80 else 0)
-    page = (c0 - 0x80) * 2
-    if c1 < 0x9E:
-        page -= 1
-    return page
+    if lead <= 0x9F:
+        ku = (lead - 0x81) * 2 + 0x21
+    else:
+        ku = (lead - 0xC1) * 2 + 0x21
+    if trail >= 0x9F:
+        ku += 1
+    return ku - 0x21
 
 
 def max_used_page(json_dir):
@@ -201,7 +202,8 @@ def main():
         print("  ✓ db_*.db")
     gfx = os.path.join(out_root, "gfx")
     if os.path.isdir(gfx):
-        for sub in ("font/ja_jp", "font/zh_cn", "sys"):
+        # 整个 font 根一起拷：兼容 gfx/font/ja_jp/12/… 与 gfx/font/12/… 两种布局
+        for sub in ("font", "sys"):
             src = os.path.join(gfx, sub.replace("/", os.sep))
             if os.path.isdir(src):
                 dst = os.path.join(pr, "gfx", sub.replace("/", os.sep))

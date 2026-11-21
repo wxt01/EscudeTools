@@ -69,12 +69,14 @@ def collect_chars(path, exts=(".json", ".jsonl")):
 
 
 def sjis_page(lead, trail):
-    c0 = lead - (0x40 if lead >= 0xE0 else 0)
-    c1 = trail - (1 if trail >= 0x80 else 0)
-    page = (c0 - 0x80) * 2
-    if c1 < 0x9E:
-        page -= 1
-    return page
+    """SJIS 双字节 → 字库页号（= JIS 区 - 0x21，见 misc/text.c put_char）"""
+    if lead <= 0x9F:
+        ku = (lead - 0x81) * 2 + 0x21
+    else:
+        ku = (lead - 0xC1) * 2 + 0x21
+    if trail >= 0x9F:
+        ku += 1
+    return ku - 0x21
 
 
 def build_slot_pool(exclude=None, max_page=83):
