@@ -295,6 +295,118 @@ def build_prompt(batch, ctx_lines, glossary, charmap):
     return sys_prompt, "\n".join(lines)
 
 
+_USAGE_LOCK = None
+_USAGE_PATH = None
+
+
+# ---------- 花费熔断 ----------
+# 每次请求都记账；超过 config.json 的 cost.budget_cny（或 cost.max_requests）就整体停，
+# 避免「提示词膨胀 / 批次被压小 / 重试放大」这类技术原因把钱烧超。
+
+_BUD = {
+    "req": 0, "in": 0, "out": 0, "hit": 0,
+    "in_hit_usd": 0.003, "in_miss_usd": 0.15, "out_usd": 0.6, "fx": 7.2,
+    "budget_cny": 0.0, "max_requests": 0, "stop": False, "reason": "",
+    "lock": None,
+}
+
+
+def budget_init(cfg):
+    c = cfg.get("cost") or {}
+    _BUD["in_hit_usd"] = float(c.get("in_hit_usd", _BUD["in_hit_usd"]))
+    _BUD["in_miss_usd"] = float(c.get("in_miss_usd", _BUD["in_miss_usd"]))
+    _BUD["out_usd"] = float(c.get("out_usd", _BUD["out_usd"]))
+    _BUD["fx"] = float(c.get("fx", _BUD["fx"]))
+    _BUD["budget_cny"] = float(c.get("budget_cny", 0) or 0)
+    _BUD["max_requests"] = int(c.get("max_requests", 0) or 0)
+    import threading
+    _BUD["lock"] = threading.Lock()
+
+
+def budget_yuan():
+    hit = _BUD["hit"]
+    miss = max(0, _BUD["in"] - hit)
+    usd = (hit * _BUD["in_hit_usd"] + miss * _BUD["in_miss_usd"]
+           + _BUD["out"] * _BUD["out_usd"]) / 1_000_000
+    return usd * _BUD["fx"]
+
+
+def budget_add(prompt, completion, cached):
+    with _BUD["lock"]:
+        _BUD["req"] += 1
+        _BUD["in"] += prompt
+        _BUD["out"] += completion
+        _BUD["hit"] += cached
+        spend = budget_yuan()
+        if _BUD["budget_cny"] and spend > _BUD["budget_cny"]:
+            _BUD["stop"] = True
+            _BUD["reason"] = (f"花费已达 ¥{spend:.2f}，超过 cost.budget_cny="
+                              f"{_BUD['budget_cny']:.2f} 的熔断线")
+        if _BUD["max_requests"] and _BUD["req"] > _BUD["max_requests"]:
+            _BUD["stop"] = True
+            _BUD["reason"] = (f"请求数已达 {_BUD['req']}，超过 cost.max_requests="
+                              f"{_BUD['max_requests']} 的熔断线")
+
+
+def budget_stopped():
+    if _BUD["stop"]:
+        if not _BUD.get("_announced"):
+            _BUD["_announced"] = True
+            print(f"\n!! 熔断：{_BUD['reason']}\n!! 已停发新请求，已译内容保留（重跑会断点续译）")
+        return True
+    return False
+
+
+def budget_audit(cfg, min_req=30, per_req_warn=4000, hit_warn=0.30):
+    """成本体检：拦「提示词膨胀 / 缓存失效」这类技术性超支。
+    实测参考：正常状态每请求输入 1,000~3,000 tok、缓存命中 60%~95%；
+    每请求 >4,000 tok 或命中率 <30% 说明提示词被改胖了、或缓存被打散了。"""
+    if cfg.get("cost_audit") is False or _BUD.get("_audited"):
+        return
+    if _BUD["req"] < min_req or not _BUD["in"]:
+        return
+    hit_rate = _BUD["hit"] / _BUD["in"]
+    per_req = _BUD["in"] / max(1, _BUD["req"])
+    if hit_rate < hit_warn or per_req > per_req_warn:
+        _BUD["_audited"] = True
+        print(f"\n!! 成本体检异常：缓存命中 {hit_rate:.0%}（正常 60%+）、每请求输入 {per_req:.0f} tok"
+              f"（正常 <4000）。当前 {budget_line()}\n"
+              f"!! 先查是不是改了提示词/换了模型/压小了 batch_size。")
+
+
+def budget_line():
+    hit_rate = (_BUD["hit"] / _BUD["in"] * 100) if _BUD["in"] else 0
+    return (f"请求 {_BUD['req']} 次｜输入 {_BUD['in'] / 1000:.0f}K（缓存命中 {hit_rate:.0f}%）"
+            f"｜输出 {_BUD['out'] / 1000:.0f}K｜已花 ¥{budget_yuan():.2f}")
+
+
+def _log_usage(cfg, obj):
+    """把每次调用的 token 用量追加成一行 jsonl，用于估算花费（不影响翻译）。"""
+    global _USAGE_LOCK, _USAGE_PATH
+    u = obj.get("usage") if isinstance(obj, dict) else None
+    if not u:
+        return
+    if _USAGE_LOCK is None:
+        import threading
+        _USAGE_LOCK = threading.Lock()
+    if _USAGE_PATH is None:
+        p = cfg.get("usage_log") or os.path.join(
+            _proj_root() or os.getcwd(), "3_译文", "备份", "用量.jsonl")
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        _USAGE_PATH = p
+    rec = {
+        "t": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "model": cfg.get("model", ""),
+        "prompt": u.get("prompt_tokens", 0),
+        "completion": u.get("completion_tokens", 0),
+        "total": u.get("total_tokens", 0),
+        "cached": (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+    }
+    with _USAGE_LOCK:
+        with open(_USAGE_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
 def call_api(cfg, sys_prompt, user_prompt, retry=3):
     body = {
         "model": cfg.get("model", "deepseek-v4-flash"),
@@ -318,6 +430,10 @@ def call_api(cfg, sys_prompt, user_prompt, retry=3):
             )
             with urllib.request.urlopen(req, timeout=180) as r:
                 obj = json.loads(r.read().decode())
+            _log_usage(cfg, obj)
+            u = obj.get("usage") or {}
+            budget_add(u.get("prompt_tokens", 0), u.get("completion_tokens", 0),
+                       (u.get("prompt_tokens_details") or {}).get("cached_tokens", 0))
             txt = obj["choices"][0]["message"]["content"]
             return txt
         except Exception as e:
@@ -379,7 +495,23 @@ def do_batch(batch, ctx, cfg, glossary, charmap, depth=0, terms=None):
         prepared.append({"index": b["index"], "char": b.get("char"), "jp": p})
         tagsets.append(t)
         termmaps.append(tm)
+    # 只把本批实际出现的角色喂给模型：角色表有 100+ 条时，
+    # 整表塞进每一批的 system prompt 会让「每行分摊的提示词」翻好几倍。
+    # 一批通常只有 1~3 个说话人，过滤后提示词能瘦一大截，质量不受影响。
+    if cfg.get("char_filter", True) and charmap and len(charmap) > 12:
+        used_chars = {str(b.get("char")) for b in batch if b.get("char") is not None}
+        cm = {k: v for k, v in charmap.items() if str(k) in used_chars}
+        if cm:
+            charmap = cm
     sys_p, user_p = build_prompt(prepared, ctx, glossary, charmap)
+    # quote_style=cn：按项目术语表的书写规则改用中文引号（覆盖上面第 5 条）
+    if cfg.get("quote_style") == "cn":
+        sys_p += (
+            "7. 本条覆盖第 5 条：对白与术语一律用中文双引号“”，嵌套用‘’；"
+            "不要用「」『』。省略号仍用……，破折号仍用——，不要用英文标点。\n"
+        )
+    if cfg.get("extra_rule"):
+        sys_p += str(cfg["extra_rule"]).strip() + "\n"
     try:
         zh = parse_reply(call_api(cfg, sys_p, user_p), len(batch))
         good = sum(1 for z in zh if z)
@@ -393,6 +525,8 @@ def do_batch(batch, ctx, cfg, glossary, charmap, depth=0, terms=None):
             return out
     except Exception:
         pass
+    if budget_stopped():
+        return [""] * len(batch)
     if len(batch) == 1 or depth >= 3:
         return [""] * len(batch)
     mid = len(batch) // 2
@@ -419,6 +553,8 @@ def translate_file(path, out_path, cfg, glossary, charmap, terms=None):
     wrote = 0
     with open(out_path, "a", encoding="utf-8") as fo:
         for start in range(0, len(todo), bs):
+            if budget_stopped():
+                break
             batch = todo[start:start + bs]
             first = items.index(batch[0])
             ctx = [x["jp"] for x in items[max(0, first - cs):first] if x.get("jp")]
@@ -428,35 +564,46 @@ def translate_file(path, out_path, cfg, glossary, charmap, terms=None):
                 fo.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 wrote += 1
             fo.flush()
+    budget_audit(cfg)
     return wrote
 
 
 def cmd_translate(json_dir, out_dir):
     here = os.path.dirname(os.path.abspath(__file__))
     cfg = load_cfg(here)
+    budget_init(cfg)
     asset = _asset_dir(here, cfg)
     glossary = load_tsv(os.path.join(asset, cfg.get("glossary", "glossary.tsv")))
     chars = load_tsv(os.path.join(asset, cfg.get("characters", "characters.tsv")))
-    charmap = {c[0]: c[1] for c in chars}
+    # char_tone: characters.tsv 第三列（语气说明）一并喂给模型，防语气串味。
+    # 不开这个开关时只传中文名，老项目提示词完全不变。
+    charmap = {c[0]: (c[1] + (f"（{c[2]}）" if (cfg.get("char_tone") and len(c) > 2 and c[2].strip()) else ""))
+               for c in chars}
     terms = load_terms(asset, cfg)
     os.makedirs(out_dir, exist_ok=True)
     files = sorted(f for f in os.listdir(json_dir) if f.endswith(".json"))
     limit = int(cfg.get("max_lines", 0) or 0)
     if limit:
         files = files  # 行数上限在下面逐文件累计
+    cst = cfg.get("cost") or {}
     print(f"待译脚本 {len(files)} 个；提示词术语 {len(glossary)} 条；锁定术语 {len(terms)} 条；角色 {len(charmap)} 个"
           + (f"；本次上限 {limit} 行" if limit else "；不限行数（可改 config.json 的 max_lines 设上限）"))
+    if cst.get("budget_cny") or cst.get("max_requests"):
+        print(f"花费熔断：预算 ¥{cst.get('budget_cny', 0)}｜请求上限 {cst.get('max_requests', 0) or '不限'}"
+              f"（命中 ${_BUD['in_hit_usd']}/M 未命中 ${_BUD['in_miss_usd']}/M 输出 ${_BUD['out_usd']}/M，折 {_BUD['fx']}）")
 
     done = {"n": 0}
 
     def job(fn):
+        if budget_stopped():
+            return 0
         if limit and done["n"] >= limit:
             return 0
         src = os.path.join(json_dir, fn)
         dst = os.path.join(out_dir, fn.replace(".json", ".jsonl"))
         n = translate_file(src, dst, cfg, glossary, charmap, terms)
         done["n"] += n
-        print(f"  ✓ {fn} +{n}（累计 {done['n']}）")
+        print(f"  ✓ {fn} +{n}（累计 {done['n']}）｜{budget_line()}")
         return n
 
     total = 0
@@ -464,6 +611,10 @@ def cmd_translate(json_dir, out_dir):
         for n in ex.map(job, files):
             total += n
     print(f"完成，共新增 {total} 条译文")
+    print(f"账目：{budget_line()}")
+    if _BUD["stop"]:
+        print(f"注意：本次因熔断提前结束 —— {_BUD['reason']}\n"
+              f"      已译内容都在 3_译文\\*.jsonl，重跑同一命令即可断点续译。")
 
 
 # ---------- inject ----------
@@ -493,15 +644,28 @@ def cmd_inject(db_path, json_dir, cmap_path=None):
                     pass
         if not zh:
             continue
-        try:
-            ids = [r[0] for r in cur.execute(f'select rowid from "{name}__mess" order by rowid')]
-        except sqlite3.OperationalError:
-            print(f"  ! 跳过 {name}（无 __mess 表）")
+        # 两种库结构都支持：
+        #   type 0 的 script.db      → 表 <脚本名>__mess，列 Mess
+        #   type 1 的 script_sm.db   → 表 <脚本名>，     列 DataString（只含 .001 台词）
+        table = col = None
+        for t, c in ((f"{name}__mess", "Mess"), (name, "DataString")):
+            try:
+                cols = {r[1] for r in cur.execute(f'pragma table_info("{t}")')}
+            except sqlite3.Error:
+                cols = set()
+            if cols:
+                want = c if c in cols else ("Mess" if "Mess" in cols else "DataString")
+                if want in cols:
+                    table, col = t, want
+                    break
+        if not table:
+            print(f"  ! 跳过 {name}（找不到 __mess/Mess 或 DataString）")
             continue
+        ids = [r[0] for r in cur.execute(f'select rowid from "{table}" order by rowid')]
         for i, rid in enumerate(ids):
             if i in zh:
                 s = zh[i].translate(tbl) if tbl else zh[i]
-                cur.execute(f'update "{name}__mess" set Mess=? where rowid=?', (s, rid))
+                cur.execute(f'update "{table}" set "{col}"=? where rowid=?', (s, rid))
                 done += 1
     con.commit()
     print(f"注入完成，共 {done} 行")
