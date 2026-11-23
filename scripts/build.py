@@ -280,6 +280,34 @@ def build_data(d, cmap):
     if n2:
         print(f"  界面文本写入 {n2} 行")
 
+    # data_zh.json：data.bin 里其它表的文本（技能名/说明、仪式行为、帮助文本…）
+    # 键格式：<db 文件名>|<表>|<列>|<rowid>
+    dz = os.path.join(d["root"], "data_zh.json")
+    if os.path.isfile(dz):
+        payload = json.load(open(dz, encoding="utf-8"))
+        per_db = {}
+        for k, zh in payload.items():
+            parts = k.split("|")
+            if len(parts) == 4 and isinstance(zh, str) and zh:
+                per_db.setdefault(parts[0], []).append((parts[1], parts[2], int(parts[3]), zh))
+        total_dz = 0
+        for dbname, rows in per_db.items():
+            p = os.path.join(out, dbname)
+            if not os.path.isfile(p):
+                print(f"  ! 没有 {dbname}，跳过 {len(rows)} 条")
+                continue
+            c = sqlite3.connect(p)
+            for t, col, rid, zh in rows:
+                try:
+                    c.execute(f'update "{t}" set "{col}"=? where rowid=?', (encode(zh), rid))
+                    total_dz += 1
+                except sqlite3.Error as e:
+                    print(f"  ! 写入 {t}.{col} 失败：{e}")
+                    break
+            c.commit()
+            c.close()
+        print(f"  其它表文本写入 {total_dz} 行")
+
     mdb = os.path.join(d["unpack"], "mdb")
     shutil.rmtree(mdb, ignore_errors=True)
     os.makedirs(mdb)
@@ -489,6 +517,7 @@ def main():
         need = collect_chars(d["json_cn"], [
             os.path.join(d["root"], "names_zh.json"),
             os.path.join(d["root"], "ui_zh.json"),
+            os.path.join(d["root"], "data_zh.json"),
         ])
         if not need:
             sys.exit("译文目录为空，先跑 hx.py translate")

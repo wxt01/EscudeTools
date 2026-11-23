@@ -448,6 +448,72 @@ def export_sample(rows, warns, n, out_path, seed=20261121):
     return len(pick)
 
 
+# ---------- 六·专名多译 / 生僻字形 ----------
+
+TERM_BR = re.compile(r"『([^』]{1,16})』|《([^》]{1,16})》")
+RARE_OK = set("咲呣啰嗞嗐嗶窸窣欸瘆唷呐喏诶袴屌")          # 人名用字与拟声词
+RARE_OK_TERMS = ("艶鬼", "廻鬼", "瞭望")                 # 项目内明确保留的日式写法
+
+
+def extract_terms(s):
+    out = []
+    for m in TERM_BR.finditer(s or ""):
+        out.append((m.group(1) or m.group(2)).strip())
+    return out
+
+
+def check_term_variants(rows):
+    """同一日文专名译成多个写法 → 3 种以上拦截、2 种警告"""
+    blocks, warns = [], []
+    seen = collections.defaultdict(set)
+    count = collections.Counter()
+    for r in rows:
+        jts, zts = extract_terms(r.get("jp")), extract_terms(r.get("zh"))
+        # 只在「一行里原文一个括号词、译文也一个」时才配对，避免错位误报
+        if len(jts) != 1 or len(zts) != 1:
+            continue
+        j, z = jts[0], zts[0]
+        if not j or not z or len(j) > 10:
+            continue
+        count[j] += 1
+        seen[j].add(z)
+    for j, zs in sorted(seen.items(), key=lambda kv: -count[kv[0]]):
+        if count[j] >= 3 and len(zs) >= 3:
+            blocks.append(("专名多译", "-", j[:22], "／".join(sorted(zs))[:60]))
+        elif count[j] >= 3 and len(zs) == 2:
+            warns.append(("专名两种写法", "-", j[:22], "／".join(sorted(zs))[:60], 2))
+    return blocks, warns
+
+
+def gb2312_ok(ch):
+    try:
+        ch.encode("gb2312")
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def check_rare_chars(rows, allow_chars=(), allow_terms=()):
+    """非 GB2312 汉字：小字号下容易糊，或本身就是日文/繁体写法"""
+    warns = []
+    cnt = collections.Counter()
+    first = {}
+    allow = set(allow_chars) | RARE_OK
+    for r in rows:
+        if "z_script_sample" in str(r.get("file", "")):
+            continue
+        z = r.get("zh") or ""
+        for t in set(allow_terms) | set(RARE_OK_TERMS):
+            z = z.replace(t, "")
+        for ch in z:
+            if "\u4e00" <= ch <= "\u9fff" and not gb2312_ok(ch) and ch not in allow:
+                cnt[ch] += 1
+                first.setdefault(ch, f"{r.get('file','')}#{r.get('index','')}")
+    for ch, n in cnt.most_common(30):
+        warns.append(("生僻/日文字形残留", first[ch], ch, f"{n} 处", 1))
+    return warns
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", default="")
@@ -489,7 +555,24 @@ def main():
     b2, w2 = check_consistency(rows, glossary, variants)
     blocks += b2
     warns += w2
+    b4, w4 = check_term_variants(rows)
+    blocks += b4
+    warns += w4
+    name_chars = set()
+    try:
+        for v in json.load(open(os.path.join(d["root"], "names_zh.json"), encoding="utf-8")).values():
+            if isinstance(v, str):
+                name_chars |= set(v)
+    except Exception:
+        pass
+    warns += check_rare_chars(rows, allow_chars=name_chars)
     if cmap:
+        dz_path = os.path.join(d["root"], "data_zh.json")
+        if os.path.isfile(dz_path):
+            extra = [{"file": "data_zh.json", "index": k, "jp": "", "zh": v, "note": ""}
+                     for k, v in json.load(open(dz_path, encoding="utf-8")).items()
+                     if isinstance(v, str)]
+            blocks += check_coverage(extra, cmap)
         blocks += check_coverage(rows, cmap)
         b3, w3 = check_font(cmap, max_page, [s.strip() for s in args.sizes.split(",") if s.strip()],
                             os.path.join(d["build"], "pages"))
